@@ -1,0 +1,73 @@
+# Multi-stage build for production Django backend
+
+# Stage 1: Build dependencies
+FROM python:3.10-slim as builder
+
+WORKDIR /app
+
+# Install system dependencies for building
+RUN apt-get update && apt-get install -y \
+    gcc \
+    default-libmysqlclient-dev \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install Python dependencies
+COPY requirements.txt .
+RUN pip install --upgrade pip && \
+    pip install --user --no-cache-dir -r requirements.txt
+
+# Stage 2: Production image
+FROM python:3.10-slim
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PATH="/root/.local/bin:$PATH"
+
+WORKDIR /app
+
+# Install runtime dependencies only
+RUN apt-get update && apt-get install -y \
+    default-libmysqlclient-dev \
+    netcat-openbsd \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy Python dependencies from builder
+COPY --from=builder /root/.local /root/.local
+
+# Copy project files
+COPY . .
+
+# Create necessary directories
+RUN mkdir -p /app/static /app/media
+
+# Collect static files (will be run during container startup if needed)
+# RUN python manage.py collectstatic --noinput
+
+# Create wait script for database
+RUN echo '#!/bin/sh\n\
+set -e\n\
+host="$1"\n\
+shift\n\
+port="$1"\n\
+shift\n\
+until nc -z "$host" "$port"; do\n\
+  >&2 echo "Waiting for $host:$port to be available..."\n\
+  sleep 1\n\
+done\n\
+>&2 echo "$host:$port is available - executing command"\n\
+exec "$@"' > /wait-for.sh && chmod +x /wait-for.sh
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD python -c "import socket; s=socket.socket(); s.connect(('localhost', 8000)); s.close()" || exit 1
+
+# Start production server
+CMD ["daphne", "-b", "0.0.0.0", "-p", "8000", "config.asgi:application"]
+
