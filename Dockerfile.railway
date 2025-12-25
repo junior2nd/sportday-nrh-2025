@@ -1,0 +1,28 @@
+# Railway Dockerfile - Multi-service setup
+# Railway จะใช้ Dockerfile นี้เพื่อ build และ run services
+
+FROM docker:24-dind AS docker-base
+
+# Install docker-compose
+RUN apk add --no-cache docker-compose
+
+WORKDIR /app
+
+# Copy docker-compose file
+COPY docker-compose.prod.yml .
+
+# Copy environment files
+COPY .env.example .env
+
+# Copy backend
+COPY backend/ ./backend/
+
+# Copy frontend
+COPY frontend/ ./frontend/
+
+# Expose ports
+EXPOSE 8000 3000
+
+# Start services
+CMD ["docker-compose", "-f", "docker-compose.prod.yml", "up"]
+

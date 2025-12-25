@@ -69,5 +69,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD python -c "import socket; s=socket.socket(); s.connect(('localhost', 8000)); s.close()" || exit 1
 
 # Start production server
-CMD ["daphne", "-b", "0.0.0.0", "-p", "8000", "config.asgi:application"]
+# Use PORT environment variable for Railway compatibility (defaults to 8000)
+CMD sh -c "daphne -b 0.0.0.0 -p \${PORT:-8000} config.asgi:application"
 
