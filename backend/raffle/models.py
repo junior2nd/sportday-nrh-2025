@@ -84,6 +84,8 @@ class RaffleParticipant(models.Model):
     )
     selected_at = models.DateTimeField(auto_now_add=True, verbose_name="เวลาที่ถูกเลือก")
     seed_value = models.CharField(max_length=100, blank=True, verbose_name="Seed value สำหรับตรวจสอบ")
+    is_printed = models.BooleanField(default=False, verbose_name="พิมพ์แล้ว")
+    printed_at = models.DateTimeField(null=True, blank=True, verbose_name="วันที่พิมพ์")
 
     class Meta:
         verbose_name = "ผู้ถูกเลือก"

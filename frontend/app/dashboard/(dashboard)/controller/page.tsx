@@ -5,8 +5,9 @@ import { usePathname } from 'next/navigation';
 import { raffleApi, Prize, RaffleEvent } from '@/lib/api/raffle';
 import { useHeader } from '@/components/ui/HeaderContext';
 import { useEvent } from '@/lib/contexts/EventContext';
-import { QrCode } from 'lucide-react';
+import { QrCode, Play, Pause } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import { useWebSocket } from '@/lib/hooks/useWebSocket';
 
 export default function ControllerPage() {
   const pathname = usePathname();
@@ -21,7 +22,14 @@ export default function ControllerPage() {
   const [error, setError] = useState('');
   const [qrCodeUrl, setQrCodeUrl] = useState<string>('');
   const [hasSpun, setHasSpun] = useState(false); // เพิ่ม state สำหรับติดตามว่าได้กด spin แล้วหรือยัง
+  const [remoteIsSpinning, setRemoteIsSpinning] = useState(false); // Track remote spinning state from WebSocket
+  const [playingSound, setPlayingSound] = useState<string | null>(null); // Track which sound is currently playing
   const lastPathnameRef = useRef<string | null>(null);
+  
+  // Audio refs for background sounds
+  const wheelSoundRef = useRef<HTMLAudioElement | null>(null);
+  const oscaSoundRef = useRef<HTMLAudioElement | null>(null);
+  const marvelSoundRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     setHeader(
@@ -29,6 +37,63 @@ export default function ControllerPage() {
       'ควบคุมการแสดงผลการจับสลาก'
     );
   }, [pathname, setHeader]);
+
+  // Initialize audio objects
+  useEffect(() => {
+    if (typeof Audio !== 'undefined') {
+      // Initialize wheel sound
+      try {
+        wheelSoundRef.current = new Audio('/audio/wheel.mp3');
+        wheelSoundRef.current.preload = 'auto';
+        wheelSoundRef.current.loop = false; // Prevent looping
+      } catch (err) {
+        console.error('Error initializing wheel sound:', err);
+      }
+
+      // Initialize osca sound (if file exists)
+      try {
+        oscaSoundRef.current = new Audio('/audio/osca.mp3');
+        oscaSoundRef.current.preload = 'auto';
+        oscaSoundRef.current.loop = false; // Prevent looping
+        oscaSoundRef.current.addEventListener('error', () => {
+          console.warn('osca.mp3 file not found or failed to load');
+        });
+      } catch (err) {
+        console.error('Error initializing osca sound:', err);
+      }
+
+      // Initialize marvel sound (if file exists)
+      try {
+        marvelSoundRef.current = new Audio('/audio/marvel.mp3');
+        marvelSoundRef.current.preload = 'auto';
+        marvelSoundRef.current.loop = false; // Prevent looping
+        marvelSoundRef.current.addEventListener('error', () => {
+          console.warn('marvel.mp3 file not found or failed to load');
+        });
+      } catch (err) {
+        console.error('Error initializing marvel sound:', err);
+      }
+    }
+    
+    // Cleanup on unmount
+    return () => {
+      if (wheelSoundRef.current) {
+        wheelSoundRef.current.pause();
+        wheelSoundRef.current.currentTime = 0;
+        wheelSoundRef.current = null;
+      }
+      if (oscaSoundRef.current) {
+        oscaSoundRef.current.pause();
+        oscaSoundRef.current.currentTime = 0;
+        oscaSoundRef.current = null;
+      }
+      if (marvelSoundRef.current) {
+        marvelSoundRef.current.pause();
+        marvelSoundRef.current.currentTime = 0;
+        marvelSoundRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     loadRaffleEvents();
@@ -40,6 +105,30 @@ export default function ControllerPage() {
       loadQRCode();
     }
   }, [selectedRaffleEvent]);
+
+  // WebSocket connection for receiving spin state
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+  const wsUrl = selectedRaffleEvent
+    ? `${API_URL.replace('/api', '')}/ws/raffle/${selectedRaffleEvent}/`
+    : '';
+
+  const { isConnected } = useWebSocket({
+    url: wsUrl,
+    onMessage: (message) => {
+      if (message.type === 'control_action') {
+        const { action, data } = message;
+        if (action === 'spin_state') {
+          if (data.isSpinning !== undefined) {
+            setRemoteIsSpinning(data.isSpinning);
+            // If remote spinning stops and we have spun, reset hasSpun
+            if (!data.isSpinning && hasSpun) {
+              setHasSpun(false);
+            }
+          }
+        }
+      }
+    },
+  });
 
   const loadRaffleEvents = async () => {
     try {
@@ -163,6 +252,67 @@ export default function ControllerPage() {
     }
   };
 
+  const handleSoundToggle = (soundName: 'wheel' | 'osca' | 'marvel') => {
+    // Stop all sounds first and remove event listeners
+    if (wheelSoundRef.current) {
+      wheelSoundRef.current.pause();
+      wheelSoundRef.current.currentTime = 0;
+      wheelSoundRef.current.onended = null;
+    }
+    if (oscaSoundRef.current) {
+      oscaSoundRef.current.pause();
+      oscaSoundRef.current.currentTime = 0;
+      oscaSoundRef.current.onended = null;
+    }
+    if (marvelSoundRef.current) {
+      marvelSoundRef.current.pause();
+      marvelSoundRef.current.currentTime = 0;
+      marvelSoundRef.current.onended = null;
+    }
+
+    // If the same sound is playing, stop it
+    if (playingSound === soundName) {
+      setPlayingSound(null);
+      return;
+    }
+
+    // Play the selected sound
+    let soundRef: HTMLAudioElement | null = null;
+    switch (soundName) {
+      case 'wheel':
+        soundRef = wheelSoundRef.current;
+        break;
+      case 'osca':
+        soundRef = oscaSoundRef.current;
+        break;
+      case 'marvel':
+        soundRef = marvelSoundRef.current;
+        break;
+    }
+
+    if (soundRef) {
+      // Ensure loop is disabled
+      soundRef.loop = false;
+      soundRef.currentTime = 0;
+      
+      // Set up ended event handler before playing
+      soundRef.onended = () => {
+        setPlayingSound(null);
+        soundRef.onended = null;
+      };
+
+      soundRef.play().catch((err: any) => {
+        console.error(`Error playing ${soundName} sound:`, err);
+        setPlayingSound(null);
+      });
+      
+      setPlayingSound(soundName);
+    } else {
+      console.warn(`Sound file for ${soundName} is not available`);
+      setPlayingSound(null);
+    }
+  };
+
   if (!selectedEvent) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -279,7 +429,7 @@ export default function ControllerPage() {
                   value={selectedPrize?.id.toString() || ''}
                   onChange={(e) => handlePrizeChange(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  disabled={loading || availablePrizes.length === 0}
+                  disabled={loading || availablePrizes.length === 0 || remoteIsSpinning}
                 >
                   <option value="">-- เลือกประเภทรางวัล --</option>
                   {availablePrizes.map((prize) => (
@@ -299,7 +449,7 @@ export default function ControllerPage() {
                   value={displayCount}
                   onChange={(e) => handleDisplayCountChange(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  disabled={!selectedPrize}
+                  disabled={!selectedPrize || remoteIsSpinning}
                 >
                   <option value="1">1</option>
                   <option value="2">2</option>
@@ -315,14 +465,14 @@ export default function ControllerPage() {
               <div className="flex gap-4 pt-4">
                 <button
                   onClick={handleSpin}
-                  disabled={!selectedPrize || loading || hasSpun}
+                  disabled={!selectedPrize || loading || hasSpun || remoteIsSpinning}
                   className="flex-1 px-6 py-3 bg-amber-500 text-white rounded-lg hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
                 >
                   {loading ? 'กำลังส่งคำสั่ง...' : hasSpun ? 'ได้กด Spin แล้ว' : 'Spin'}
                 </button>
                 <button
                   onClick={handleSave}
-                  disabled={loading || !hasSpun}
+                  disabled={loading || !hasSpun || remoteIsSpinning}
                   className="flex-1 px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
                 >
                   {loading ? 'กำลังบันทึก...' : 'บันทึก'}
@@ -364,6 +514,73 @@ export default function ControllerPage() {
                   <p>กรุณาเลือกการจับสลาก</p>
                 </div>
               )}
+            </div>
+
+            {/* Background Sounds Section */}
+            <div className="w-full bg-white rounded-lg shadow-sm border border-gray-100 p-6 mt-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">เสียงบรรยากาศ</h3>
+              <div className="grid grid-cols-3 gap-4">
+                <button
+                  onClick={() => handleSoundToggle('wheel')}
+                  className={`px-4 py-3 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 ${
+                    playingSound === 'wheel'
+                      ? 'bg-amber-500 text-white shadow-lg'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {playingSound === 'wheel' ? (
+                    <>
+                      <Pause className="w-5 h-5" />
+                      <span>Wheel</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-5 h-5" />
+                      <span>Wheel</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => handleSoundToggle('osca')}
+                  className={`px-4 py-3 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 ${
+                    playingSound === 'osca'
+                      ? 'bg-amber-500 text-white shadow-lg'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {playingSound === 'osca' ? (
+                    <>
+                      <Pause className="w-5 h-5" />
+                      <span>Osca</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-5 h-5" />
+                      <span>Osca</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => handleSoundToggle('marvel')}
+                  className={`px-4 py-3 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 ${
+                    playingSound === 'marvel'
+                      ? 'bg-amber-500 text-white shadow-lg'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {playingSound === 'marvel' ? (
+                    <>
+                      <Pause className="w-5 h-5" />
+                      <span>Marvel</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-5 h-5" />
+                      <span>Marvel</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </>

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { raffleApi, Prize } from '@/lib/api/raffle';
 import { Lock } from 'lucide-react';
+import { useWebSocket } from '@/lib/hooks/useWebSocket';
 
 const MOBILE_CONTROLLER_PASSWORD = '1089710897';
 const DISPLAY_COUNTS = [1, 2, 3, 6, 10, 20, 30];
@@ -19,6 +20,21 @@ export default function MobileControllerPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [hasSpun, setHasSpun] = useState(false); // เพิ่ม state สำหรับติดตามว่าได้กด spin แล้วหรือยัง
+  const [remoteIsSpinning, setRemoteIsSpinning] = useState(false); // Track remote spinning state from WebSocket
+
+  // Load password from localStorage on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedPassword = localStorage.getItem('mobile_controller_password');
+      if (savedPassword) {
+        setPassword(savedPassword);
+        // Auto-login if password is saved
+        if (savedPassword === MOBILE_CONTROLLER_PASSWORD) {
+          setIsAuthenticated(true);
+        }
+      }
+    }
+  }, []);
 
   // Extract raffle_event from URL
   useEffect(() => {
@@ -37,6 +53,30 @@ export default function MobileControllerPage() {
       loadPrizes();
     }
   }, [isAuthenticated, raffleEventId]);
+
+  // WebSocket connection for receiving spin state
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+  const wsUrl = raffleEventId && isAuthenticated
+    ? `${API_URL.replace('/api', '')}/ws/raffle/${raffleEventId}/`
+    : '';
+
+  const { isConnected } = useWebSocket({
+    url: wsUrl,
+    onMessage: (message) => {
+      if (message.type === 'control_action') {
+        const { action, data } = message;
+        if (action === 'spin_state') {
+          if (data.isSpinning !== undefined) {
+            setRemoteIsSpinning(data.isSpinning);
+            // If remote spinning stops and we have spun, reset hasSpun
+            if (!data.isSpinning && hasSpun) {
+              setHasSpun(false);
+            }
+          }
+        }
+      }
+    },
+  });
 
   const loadPrizes = async () => {
     if (!raffleEventId) return;
@@ -57,6 +97,10 @@ export default function MobileControllerPage() {
     if (password === MOBILE_CONTROLLER_PASSWORD) {
       setIsAuthenticated(true);
       setError('');
+      // Save password to localStorage
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('mobile_controller_password', password);
+      }
     } else {
       setError('รหัสผ่านไม่ถูกต้อง');
     }
@@ -214,7 +258,7 @@ export default function MobileControllerPage() {
                   <button
                     key={prize.id}
                     onClick={() => handlePrizeSelect(prize)}
-                    disabled={hasSpun || loading}
+                    disabled={hasSpun || loading || remoteIsSpinning}
                     className={`
                       px-4 py-4 rounded-xl font-semibold text-sm transition-all duration-200
                       ${isSelected 
@@ -249,7 +293,7 @@ export default function MobileControllerPage() {
                 <button
                   key={count}
                   onClick={() => handleDisplayCountChange(count)}
-                  disabled={hasSpun || !selectedPrize || loading}
+                  disabled={hasSpun || !selectedPrize || loading || remoteIsSpinning}
                   className={`
                     px-4 py-4 rounded-xl font-bold text-lg transition-all duration-200
                     ${isSelected 
@@ -271,7 +315,7 @@ export default function MobileControllerPage() {
           {/* Spin Button */}
           <button
             onClick={handleSpin}
-            disabled={loading || !selectedPrize || hasSpun}
+            disabled={loading || !selectedPrize || hasSpun || remoteIsSpinning}
             className={`
               w-full px-8 py-8 rounded-2xl font-bold text-3xl shadow-2xl
               transition-all duration-200 transform
@@ -287,7 +331,7 @@ export default function MobileControllerPage() {
           {/* Save Button */}
           <button
             onClick={handleSave}
-            disabled={loading || !hasSpun}
+            disabled={loading || !hasSpun || remoteIsSpinning}
             className={`
               w-full px-8 py-6 rounded-2xl font-bold text-2xl shadow-2xl
               transition-all duration-200 transform

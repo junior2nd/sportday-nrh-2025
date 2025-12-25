@@ -48,7 +48,7 @@ export default function RaffleGrid1(props: RaffleGridBaseProps) {
   }, [winnersForDisplay.length, gridConfig]);
 
   // คำนวณเวลาหมุน
-  const spinDuration = 5000; // 5 วินาทีสำหรับ displayCount = 1
+  const spinDuration = 6500; // 6.5 วินาทีให้จบทันกับเพลง
 
   return (
     <RaffleGridBase

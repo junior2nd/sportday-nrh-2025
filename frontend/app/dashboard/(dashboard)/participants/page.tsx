@@ -29,7 +29,7 @@ import DataTable from '@/components/ui/DataTable';
 import ActionButtons from '@/components/ui/ActionButtons';
 import StatusBadge from '@/components/ui/StatusBadge';
 import Modal from '@/components/ui/Modal';
-import { Plus, Upload, RotateCcw, AlertTriangle, Printer, FileText } from 'lucide-react';
+import { Plus, Upload, RotateCcw, AlertTriangle, Printer, FileText, Trash2 } from 'lucide-react';
 
 export default function ParticipantsPage() {
   const { canCreate, canEdit, canDelete } = useRole();
@@ -115,10 +115,12 @@ export default function ParticipantsPage() {
 
   const formModal = useModal<Participant>();
   const deleteModal = useModal<Participant>();
+  const deleteAllModal = useModal();
   const importModal = useModal();
   const resetModal = useModal();
   const deleteMutation = useDeleteParticipant();
   const resetEligibilityMutation = useResetAllEligibility();
+  const [deletingAll, setDeletingAll] = useState(false);
 
   const handleCreate = useCallback(() => {
     formModal.open();
@@ -158,6 +160,46 @@ export default function ParticipantsPage() {
   const handleResetEligibilityClick = useCallback(() => {
     resetModal.open();
   }, [resetModal]);
+
+  const handleDeleteAllClick = useCallback(() => {
+    deleteAllModal.open();
+  }, [deleteAllModal]);
+
+  const handleDeleteAll = useCallback(async (reason: string) => {
+    if (!selectedEvent || !participants || participants.length === 0) return;
+    
+    try {
+      setDeletingAll(true);
+      // Delete all participants one by one to avoid overwhelming the server
+      let successCount = 0;
+      let errorCount = 0;
+      
+      for (const participant of participants) {
+        try {
+          await deleteMutation.mutateAsync({
+            id: participant.id,
+            reason: `ลบทั้งหมด: ${reason}`,
+          });
+          successCount++;
+        } catch (error) {
+          console.error(`Error deleting participant ${participant.id}:`, error);
+          errorCount++;
+        }
+      }
+      
+      deleteAllModal.close();
+      setCurrentPage(1);
+      
+      if (errorCount > 0) {
+        alert(`ลบสำเร็จ ${successCount} รายการ, ล้มเหลว ${errorCount} รายการ`);
+      }
+    } catch (error) {
+      console.error('Error deleting all participants:', error);
+      alert('เกิดข้อผิดพลาดในการลบรายชื่อ');
+    } finally {
+      setDeletingAll(false);
+    }
+  }, [selectedEvent, participants, deleteMutation, deleteAllModal]);
 
   const [resetPassword, setResetPassword] = useState('');
   const [resetError, setResetError] = useState('');
@@ -274,6 +316,14 @@ export default function ParticipantsPage() {
     return (
       <div className="flex items-center gap-2">
         <button
+          onClick={handleDeleteAllClick}
+          className="px-4 py-2 bg-red-600/20 text-red-600 rounded-sm hover:bg-red-700 hover:text-white transition-colors flex items-center space-x-2 shadow-sm"
+          disabled={deletingAll || !participants || participants.length === 0}
+        >
+          <Trash2 className="w-5 h-5" />
+          <span>ลบทั้งหมด</span>
+        </button>
+        <button
           onClick={handleResetEligibilityClick}
           className="px-4 py-2 bg-orange-600/20 text-orange-600 rounded-sm hover:bg-orange-700 hover:text-white transition-colors flex items-center space-x-2 shadow-sm"
           disabled={resetEligibilityMutation.isPending}
@@ -297,7 +347,7 @@ export default function ParticipantsPage() {
         </button>
       </div>
     );
-  }, [canCreateValue, selectedEvent, handleCreate, handleImport, handleResetEligibilityClick, resetEligibilityMutation.isPending]);
+  }, [canCreateValue, selectedEvent, handleCreate, handleImport, handleResetEligibilityClick, handleDeleteAllClick, resetEligibilityMutation.isPending, deletingAll, participants]);
 
   useEffect(() => {
     const pathnameChanged = lastPathnameRef.current !== pathname;
@@ -567,6 +617,15 @@ export default function ParticipantsPage() {
         onConfirm={handleDelete}
         title="ยืนยันการลบรายชื่อ"
         itemName={deleteModal.selectedItem?.name || ''}
+      />
+
+      {/* Delete All Confirm Modal */}
+      <DeleteConfirmModal
+        isOpen={deleteAllModal.isOpen}
+        onClose={deleteAllModal.close}
+        onConfirm={handleDeleteAll}
+        title="ยืนยันการลบรายชื่อทั้งหมด"
+        itemName={`${participants.length} รายชื่อ`}
       />
 
       {/* Reset Eligibility Confirm Modal */}

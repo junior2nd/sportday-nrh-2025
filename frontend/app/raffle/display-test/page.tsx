@@ -51,11 +51,49 @@ export default function RaffleDisplayTestPage() {
   const [selectedResult, setSelectedResult] = useState<any>(null);
   const [selectedWinners, setSelectedWinners] = useState<any[]>([]); // เก็บ winners ที่ได้จาก API ตอน spin
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [spinClientId, setSpinClientId] = useState<string | null>(null); // เก็บ client ID ของเครื่องที่กด spin
+  const [remoteIsSpinning, setRemoteIsSpinning] = useState(false); // Track remote spinning state from WebSocket
   
   // Refs สำหรับเก็บ metadata สำหรับ save
   const selectedSeedRef = useRef<string>('');
   const selectedRuleSnapshotRef = useRef<any>(null);
   const selectedResultRef = useRef<any>(null);
+  
+  // Audio ref for spin sound
+  const spinSoundRef = useRef<HTMLAudioElement | null>(null);
+  
+  // Generate unique client ID for this browser tab
+  const getClientId = (): string => {
+    if (typeof window !== 'undefined') {
+      // Try to get from sessionStorage first
+      let clientId = sessionStorage.getItem('raffle_client_id');
+      if (!clientId) {
+        // Generate new client ID
+        clientId = `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        sessionStorage.setItem('raffle_client_id', clientId);
+      }
+      return clientId;
+    }
+    return `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  };
+  
+  const clientIdRef = useRef<string>(getClientId());
+  
+  // Initialize audio
+  useEffect(() => {
+    if (typeof Audio !== 'undefined') {
+      spinSoundRef.current = new Audio('/audio/wheel.mp3');
+      spinSoundRef.current.preload = 'auto';
+    }
+    
+    // Cleanup on unmount
+    return () => {
+      if (spinSoundRef.current) {
+        spinSoundRef.current.pause();
+        spinSoundRef.current = null;
+      }
+    };
+  }, []);
 
   // Check authentication
   useEffect(() => {
@@ -172,9 +210,19 @@ export default function RaffleDisplayTestPage() {
       
       if (result.success && result.winners) {
         console.log('Select winners success, winners count:', result.winners.length);
-        // คำนวณเวลาหมุนตามจำนวนรายการที่แสดงผล (ปรับช้าลง 50%)
-        // ถ้า displayCount = 1 → 5 วินาที (5000ms), ถ้ามากกว่า 1 → 3 วินาที (3000ms จาก 2000ms)
-        const spinDuration = count === 1 ? 5000 : 3000;
+        // เวลาหมุน 6.5 วินาที (6500ms) ให้จบทันกับเพลง
+        const spinDuration = 6500;
+        
+        // ตั้งค่า client ID ของเครื่องที่กด spin
+        setSpinClientId(clientIdRef.current);
+        
+        // เล่นเสียง wheel.mp3
+        if (spinSoundRef.current) {
+          spinSoundRef.current.currentTime = 0; // Reset to start
+          spinSoundRef.current.play().catch((err: any) => {
+            console.error('Error playing spin sound:', err);
+          });
+        }
         
         // Store metadata for saving later (แต่ยังไม่แสดงผลลัพธ์)
         const seed = result.seed || '';
@@ -366,6 +414,24 @@ export default function RaffleDisplayTestPage() {
               handleDisplayCountChange(data.display_count.toString());
             }
             break;
+          
+          case 'play_sound':
+            if (data.sound_file && spinSoundRef.current) {
+              console.log('Received play_sound command:', data.sound_file);
+              spinSoundRef.current.src = `/audio/${data.sound_file}`;
+              spinSoundRef.current.currentTime = 0;
+              spinSoundRef.current.play().catch((err: any) => {
+                console.error('Error playing sound:', err);
+              });
+            }
+            break;
+          
+          case 'spin_state':
+            if (data.isSpinning !== undefined) {
+              console.log('Received spin_state command:', data.isSpinning);
+              setRemoteIsSpinning(data.isSpinning);
+            }
+            break;
         }
       }
     },
@@ -446,9 +512,14 @@ export default function RaffleDisplayTestPage() {
       const result = await raffleApi.selectWinners(selectedPrize.id, quantity);
       
       if (result.success && result.winners) {
-        // คำนวณเวลาหมุนตามจำนวนรายการที่แสดงผล (ปรับช้าลง 50%)
-        // ถ้า displayCount = 1 → 5 วินาที (5000ms), ถ้ามากกว่า 1 → 3 วินาที (3000ms จาก 2000ms)
-        const spinDuration = displayCount === 1 ? 5000 : 3000;
+        // เวลาหมุน 6.5 วินาที (6500ms) ให้จบทันกับเพลง
+        const spinDuration = 6500;
+        
+        // ตั้งค่า client ID ของเครื่องที่กด spin
+        setSpinClientId(clientIdRef.current);
+        
+        // Note: Sound will be played via WebSocket message from backend
+        // ไม่ต้องเล่นเสียงที่นี่เพราะเสียงจะถูกเล่นผ่าน WebSocket message
         
         // Store metadata for saving later (แต่ยังไม่แสดงผลลัพธ์)
         const seed = result.seed || '';
@@ -496,6 +567,11 @@ export default function RaffleDisplayTestPage() {
         // เปิดเผยผลลัพธ์หลังจาก animation เสร็จทั้งหมด
         const lastCardDelay = (result.winners.length - 1) * staggerDelay;
         setTimeout(() => {
+          // หยุดเสียงเมื่อ animation เสร็จ
+          if (spinSoundRef.current) {
+            spinSoundRef.current.pause();
+            spinSoundRef.current.currentTime = 0;
+          }
           // แสดงผลลัพธ์หลังจาก animation เสร็จ
           setCurrentWinners(result.winners);
           setRevealedWinners(result.winners);
@@ -516,6 +592,12 @@ export default function RaffleDisplayTestPage() {
   };
 
   const handleSaveClick = () => {
+    // ตรวจสอบว่ามีเครื่องอื่นกำลัง spin อยู่หรือไม่
+    if (remoteIsSpinning && !isSpinning) {
+      setError('มีเครื่องอื่นกำลัง spin อยู่ กรุณารอให้เสร็จก่อน');
+      return;
+    }
+    
     // ใช้ revealedWinners หรือ selectedWinners (เก็บไว้ตอน spin) หรือ currentWinners ที่มี id property
     let winnersToSave: any[] = [];
     
@@ -558,6 +640,13 @@ export default function RaffleDisplayTestPage() {
   };
 
   const handleSaveConfirm = useCallback(async () => {
+    // ตรวจสอบว่ามีเครื่องอื่นกำลัง spin อยู่หรือไม่
+    if (remoteIsSpinning && !isSpinning) {
+      setError('มีเครื่องอื่นกำลัง spin อยู่ กรุณารอให้เสร็จก่อน');
+      setIsSaveModalOpen(false);
+      return;
+    }
+    
     // ใช้ revealedWinners หรือ selectedWinners (เก็บไว้ตอน spin) หรือ currentWinners ที่มี id property
     // ใช้ ref เพื่อให้ WebSocket handler ได้ข้อมูลล่าสุด
     let winnersToSave: any[] = [];
@@ -652,6 +741,9 @@ export default function RaffleDisplayTestPage() {
       selectedRuleSnapshotRef.current = null;
       selectedResultRef.current = null;
       setIsSaveModalOpen(false);
+      
+      // Reset spinClientId เพื่อให้สามารถ spin ใหม่ได้
+      setSpinClientId(null);
       
       // เคลียค่าทั้งหมดหลังบันทึก
       setDisplayCount(1);
@@ -752,6 +844,7 @@ export default function RaffleDisplayTestPage() {
                     loading || 
                     availablePrizes.length === 0 || 
                     isSpinning || 
+                    remoteIsSpinning ||
                     (revealedWinners.length > 0 || (currentWinners.length > 0 && currentWinners.some(w => w && w.id)))
                   }
                 >
@@ -774,6 +867,7 @@ export default function RaffleDisplayTestPage() {
                   disabled={
                     !selectedPrize || 
                     isSpinning || 
+                    remoteIsSpinning ||
                     (revealedWinners.length > 0 || (currentWinners.length > 0 && currentWinners.some(w => w && w.id)))
                   }
                 >
@@ -792,6 +886,7 @@ export default function RaffleDisplayTestPage() {
                 onClick={handleSpinClick}
                 disabled={
                   isSpinning || 
+                  remoteIsSpinning ||
                   !selectedPrize || 
                   loading || 
                   !canSpinRaffle() ||
@@ -812,7 +907,7 @@ export default function RaffleDisplayTestPage() {
               </button>
               <button 
                 onClick={handleSaveClick}
-                disabled={!currentWinners || currentWinners.length === 0 || loading}
+                disabled={!currentWinners || currentWinners.length === 0 || loading || remoteIsSpinning}
                 className='bg-blue-500 hover:bg-blue-400 border-blue-400 text-white border-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed'
               >
                 บันทึก

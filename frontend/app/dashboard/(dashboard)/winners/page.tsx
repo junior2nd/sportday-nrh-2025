@@ -6,6 +6,7 @@ import { raffleApi, RaffleParticipant, Prize } from '@/lib/api/raffle';
 import { useHeader } from '@/components/ui/HeaderContext';
 import { useEvent } from '@/lib/contexts/EventContext';
 import WinnersTable from '@/components/raffle/WinnersTable';
+import { Printer, FileText } from 'lucide-react';
 
 export default function WinnersPage() {
   const pathname = usePathname();
@@ -19,6 +20,11 @@ export default function WinnersPage() {
   const [prizeFilter, setPrizeFilter] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [exporting, setExporting] = useState(false);
+  const [startIndex, setStartIndex] = useState<number | undefined>(undefined);
+  const [endIndex, setEndIndex] = useState<number | undefined>(undefined);
+  const [onlyUnprinted, setOnlyUnprinted] = useState(false);
+  const [selectedWinnerIds, setSelectedWinnerIds] = useState<number[]>([]);
+  const [marking, setMarking] = useState(false);
   const [pagination, setPagination] = useState<{
     count: number;
     next?: string | null;
@@ -96,6 +102,8 @@ export default function WinnersPage() {
         params.prize = prizeFilter;
       }
 
+      // Note: ไม่ส่ง start_index, end_index, only_unprinted ไปใน loadWinners
+      // เพราะ parameters เหล่านี้ใช้เฉพาะตอน export/print เท่านั้น
       const data = await raffleApi.listWinners(params);
       
       // Handle paginated response
@@ -107,19 +115,23 @@ export default function WinnersPage() {
           next: paginatedData.next || null,
           previous: paginatedData.previous || null,
         });
+        setError(''); // Clear error on success
       } else if (Array.isArray(data)) {
         // If API returns array directly (no pagination), show all results
         setWinners(data);
         setPagination({
           count: data.length,
         });
+        setError(''); // Clear error on success
       } else {
         setWinners([]);
         setPagination(null);
+        setError('ไม่พบข้อมูล');
       }
     } catch (err: any) {
       console.error('Error loading winners:', err);
-      setError(err.response?.data?.error || 'ไม่สามารถโหลดข้อมูลได้');
+      const errorMessage = err.response?.data?.error || err.response?.data?.detail || err.message || 'ไม่สามารถโหลดข้อมูลได้';
+      setError(errorMessage);
       setWinners([]);
       setPagination(null);
     } finally {
@@ -165,6 +177,18 @@ export default function WinnersPage() {
 
       if (prizeFilter) {
         params.prize = prizeFilter;
+      }
+
+      if (startIndex) {
+        params.start_index = startIndex;
+      }
+
+      if (endIndex) {
+        params.end_index = endIndex;
+      }
+
+      if (onlyUnprinted) {
+        params.only_unprinted = true;
       }
 
       const htmlContent = await raffleApi.exportWinnersPDF(params);
@@ -219,6 +243,18 @@ export default function WinnersPage() {
         params.prize = prizeFilter;
       }
 
+      if (startIndex) {
+        params.start_index = startIndex;
+      }
+
+      if (endIndex) {
+        params.end_index = endIndex;
+      }
+
+      if (onlyUnprinted) {
+        params.only_unprinted = true;
+      }
+
       const blob = await raffleApi.exportWinnersExcel(params);
       
       // Create download link
@@ -236,6 +272,26 @@ export default function WinnersPage() {
       alert('เกิดข้อผิดพลาดในการสร้างไฟล์ Excel: ' + (err.response?.data?.error || err.message));
     } finally {
       setExporting(false);
+    }
+  };
+
+  const handleMarkPrinted = async () => {
+    if (selectedWinnerIds.length === 0) {
+      alert('กรุณาเลือกผู้ได้รับรางวัลที่ต้องการ mark');
+      return;
+    }
+
+    try {
+      setMarking(true);
+      await raffleApi.markWinnersPrinted(selectedWinnerIds);
+      alert(`Marked ${selectedWinnerIds.length} winners as printed`);
+      setSelectedWinnerIds([]);
+      loadWinners(); // Refresh to show updated status
+    } catch (err: any) {
+      console.error('Error marking winners as printed:', err);
+      alert('เกิดข้อผิดพลาด: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setMarking(false);
     }
   };
 
@@ -354,6 +410,81 @@ export default function WinnersPage() {
         </div>
       )}
 
+      {/* Print Options */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">ตัวเลือกการพิมพ์ (ใช้เฉพาะตอนพิมพ์/Export)</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+          <div className="flex flex-col">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              ลำดับเริ่มต้น
+            </label>
+            <input
+              type="number"
+              min="1"
+              value={startIndex || ''}
+              onChange={(e) => setStartIndex(e.target.value ? parseInt(e.target.value, 10) : undefined)}
+              placeholder="เช่น 100"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+            <p className="text-xs text-gray-500 mt-1">ใช้เฉพาะตอนพิมพ์/Export</p>
+          </div>
+          <div className="flex flex-col">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              ลำดับสิ้นสุด
+            </label>
+            <input
+              type="number"
+              min="1"
+              value={endIndex || ''}
+              onChange={(e) => setEndIndex(e.target.value ? parseInt(e.target.value, 10) : undefined)}
+              placeholder="เช่น 500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+            <p className="text-xs text-gray-500 mt-1">ใช้เฉพาะตอนพิมพ์/Export</p>
+          </div>
+          <div className="flex flex-col items-center justify-center border border-gray-800/20 rounded-sm">
+            <label className="flex items-center space-x-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={onlyUnprinted}
+                onChange={(e) => setOnlyUnprinted(e.target.checked)}
+                className="w-4 h-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500"
+              />
+              <span className="text-sm font-medium text-gray-700">
+                พิมพ์เฉพาะที่ยังไม่ได้พิมพ์
+              </span>
+            </label>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+          <button
+            onClick={handlePrintPDF}
+            disabled={exporting}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
+            title="พิมพ์/Preview PDF"
+          >
+            <Printer className="w-5 h-5" />
+            <span>{exporting ? 'กำลังสร้าง...' : 'พิมพ์/Preview'}</span>
+          </button>
+          <button
+            onClick={handleExportExcel}
+            disabled={exporting}
+            className="px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
+            title="บันทึกเป็น Excel"
+          >
+            <FileText className="w-5 h-5" />
+            <span>{exporting ? 'กำลังสร้าง...' : 'บันทึก Excel'}</span>
+          </button>
+          <button
+            onClick={handleMarkPrinted}
+            disabled={selectedWinnerIds.length === 0 || marking}
+            className="px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
+          >
+            {marking ? 'กำลัง mark...' : `Mark as Printed (${selectedWinnerIds.length})`}
+          </button>
+        </div>
+      </div>
+
       <WinnersTable
         winners={winners}
         loading={loading}
@@ -373,9 +504,8 @@ export default function WinnersPage() {
         onPrizeFilterChange={handlePrizeFilterChange}
         availablePrizes={prizes.map((p) => ({ id: p.id, name: p.name }))}
         showMarkButton={false}
-        onPrint={handlePrintPDF}
-        onExportExcel={handleExportExcel}
-        isExporting={exporting}
+        selectedWinnerIds={selectedWinnerIds}
+        onSelectedWinnerIdsChange={setSelectedWinnerIds}
       />
     </div>
   );

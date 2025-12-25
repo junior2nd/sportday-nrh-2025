@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { RaffleParticipant } from '@/lib/api/raffle';
-import { ChevronLeft, ChevronRight, Search, X, Printer, FileText } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Search, X } from 'lucide-react';
 
 interface WinnersTableProps {
   winners: RaffleParticipant[];
@@ -23,9 +23,8 @@ interface WinnersTableProps {
   markedNames?: Set<string>;
   onMarkName?: (name: string) => void;
   showMarkButton?: boolean;
-  onPrint?: () => void;
-  onExportExcel?: () => void;
-  isExporting?: boolean;
+  selectedWinnerIds?: number[];
+  onSelectedWinnerIdsChange?: (ids: number[]) => void;
 }
 
 export default function WinnersTable({
@@ -41,9 +40,8 @@ export default function WinnersTable({
   markedNames = new Set(),
   onMarkName,
   showMarkButton = false,
-  onPrint,
-  onExportExcel,
-  isExporting = false,
+  selectedWinnerIds = [],
+  onSelectedWinnerIdsChange,
 }: WinnersTableProps) {
   const totalPages = pagination
     ? Math.ceil(pagination.count / (pagination.pageSize || 20))
@@ -95,6 +93,37 @@ export default function WinnersTable({
     }
   };
 
+  const handleSelectWinner = (winnerId: number, checked: boolean) => {
+    if (onSelectedWinnerIdsChange) {
+      if (checked) {
+        onSelectedWinnerIdsChange([...selectedWinnerIds, winnerId]);
+      } else {
+        onSelectedWinnerIdsChange(selectedWinnerIds.filter(id => id !== winnerId));
+      }
+    }
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    if (onSelectedWinnerIdsChange) {
+      if (checked) {
+        onSelectedWinnerIdsChange(winners.map(w => w.id));
+      } else {
+        onSelectedWinnerIdsChange([]);
+      }
+    }
+  };
+
+  // Calculate rank (ลำดับรางวัล) based on pagination
+  const getRank = (index: number) => {
+    if (!pagination || !pagination.currentPage || !pagination.pageSize) {
+      return index + 1;
+    }
+    return ((pagination.currentPage - 1) * pagination.pageSize) + index + 1;
+  };
+
+  const allSelected = winners.length > 0 && winners.every(w => selectedWinnerIds.includes(w.id));
+  const someSelected = winners.some(w => selectedWinnerIds.includes(w.id));
+
   return (
     <div className="space-y-4">
       {/* Filters */}
@@ -128,30 +157,6 @@ export default function WinnersTable({
               >
                 ค้นหา
               </button>
-              {onPrint && (
-                <button
-                  type="button"
-                  onClick={onPrint}
-                  disabled={isExporting}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                  title="พิมพ์/Preview PDF"
-                >
-                  <Printer className="w-5 h-5" />
-                  <span>{isExporting ? 'กำลังสร้าง...' : 'พิมพ์/Preview'}</span>
-                </button>
-              )}
-              {onExportExcel && (
-                <button
-                  type="button"
-                  onClick={onExportExcel}
-                  disabled={isExporting}
-                  className="px-4 py-2 bg-emerald-600 text-white rounded-sm hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                  title="บันทึกเป็น Excel"
-                >
-                  <FileText className="w-5 h-5" />
-                  <span>{isExporting ? 'กำลังสร้าง...' : 'บันทึก Excel'}</span>
-                </button>
-              )}
             </form>
           )}
         </div>
@@ -172,8 +177,21 @@ export default function WinnersTable({
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
+                  {onSelectedWinnerIdsChange && (
+                    <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        ref={(input) => {
+                          if (input) input.indeterminate = someSelected && !allSelected;
+                        }}
+                        onChange={(e) => handleSelectAll(e.target.checked)}
+                        className="w-4 h-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500"
+                      />
+                    </th>
+                  )}
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    ID
+                    ลำดับรางวัล
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     ชื่อผู้ได้รับรางวัล
@@ -183,6 +201,9 @@ export default function WinnersTable({
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     หน่วยงาน
+                  </th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    สถานะพิมพ์
                   </th>
                   {showMarkButton && (
                     <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -202,15 +223,27 @@ export default function WinnersTable({
                     // If both marked or both not marked, sort by date (newest first)
                     return new Date(b.selected_at).getTime() - new Date(a.selected_at).getTime();
                   })
-                  .map((winner) => {
+                  .map((winner, index) => {
                   const isMarked = markedNames.has(winner.participant_name);
+                  const isSelected = selectedWinnerIds.includes(winner.id);
+                  const rank = getRank(index);
                   return (
                     <tr
                       key={winner.id}
-                      className={`hover:bg-gray-50 ${isMarked ? 'bg-yellow-50' : ''}`}
+                      className={`hover:bg-gray-50 ${isMarked ? 'bg-yellow-50' : ''} ${isSelected ? 'bg-emerald-50' : ''}`}
                     >
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {winner.id}
+                      {onSelectedWinnerIdsChange && (
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => handleSelectWinner(winner.id, e.target.checked)}
+                            className="w-4 h-4 text-emerald-600 border-gray-300 rounded focus:ring-emerald-500"
+                          />
+                        </td>
+                      )}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-center">
+                        {rank}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                         {isMarked && (
@@ -223,6 +256,17 @@ export default function WinnersTable({
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {winner.participant_department || '-'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-center text-sm">
+                        {winner.is_printed ? (
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            ✓ พิมพ์แล้ว
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                            ยังไม่ได้พิมพ์
+                          </span>
+                        )}
                       </td>
                       {showMarkButton && onMarkName && (
                         <td className="px-6 py-4 whitespace-nowrap text-center text-sm">

@@ -29,7 +29,7 @@ export default function RaffleGrid8(props: RaffleGridBaseProps) {
   }, [winnersForDisplay.length, gridConfig]);
 
   // คำนวณเวลาหมุน
-  const spinDuration = 3000;
+  const spinDuration = 6500; // 6.5 วินาทีให้จบทันกับเพลง
 
   return (
     <RaffleGridBase

@@ -195,17 +195,19 @@
     <table>
         <thead>
             <tr>
-                <th style="width: 8%;">ID</th>
-                <th style="width: 30%;">ชื่อผู้ได้รับรางวัล</th>
-                <th style="width: 25%;">รางวัล</th>
-                <th style="width: 22%;">หน่วยงาน</th>
+                <th style="width: 8%;">ลำดับรางวัล</th>
+                <th style="width: 12%;">ID โรงพยาบาล</th>
+                <th style="width: 28%;">ชื่อผู้ได้รับรางวัล</th>
+                <th style="width: 22%;">รางวัล</th>
+                <th style="width: 15%;">หน่วยงาน</th>
                 <th style="width: 15%;">ลงชื่อ</th>
             </tr>
         </thead>
         <tbody>
             {% for winner in winners %}
             <tr>
-                <td style="text-align: center;">{{ winner.id }}</td>
+                <td style="text-align: center;">{{ winner.rank }}</td>
+                <td style="text-align: center;">{{ winner.hospital_id|default:'' }}</td>
                 <td>{{ winner.participant_name }}</td>
                 <td>{{ winner.prize_name }}</td>
                 <td>{{ winner.department }}</td>
@@ -213,7 +215,7 @@
             </tr>
             {% empty %}
             <tr>
-                <td colspan="5" style="text-align: center; padding: 20px;">ไม่พบข้อมูล</td>
+                <td colspan="6" style="text-align: center; padding: 20px;">ไม่พบข้อมูล</td>
             </tr>
             {% endfor %}
         </tbody>

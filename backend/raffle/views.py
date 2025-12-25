@@ -864,6 +864,119 @@ class RaffleParticipantViewSet(viewsets.ModelViewSet):
             request=self.request
         )
     
+    @action(detail=False, methods=['post'], url_path='mark-printed')
+    def mark_printed(self, request):
+        """Mark winners as printed (bulk operation)"""
+        org_id = getattr(request, 'org_id', None)
+        if not org_id:
+            return Response(
+                {'error': 'Organization ID not found'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        winner_ids = request.data.get('winner_ids', [])
+        if not winner_ids or not isinstance(winner_ids, list):
+            return Response(
+                {'error': 'winner_ids is required and must be a list'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get queryset filtered by org
+        queryset = RaffleParticipant.objects.filter(
+            id__in=winner_ids,
+            prize__raffle_event__org_id=org_id
+        )
+        
+        if queryset.count() != len(winner_ids):
+            return Response(
+                {'error': 'Some winners not found or do not belong to this organization'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Update print status
+        from django.utils import timezone
+        updated_count = queryset.update(
+            is_printed=True,
+            printed_at=timezone.now()
+        )
+        
+        # Create audit log
+        for winner in queryset:
+            org = winner.prize.raffle_event.org if winner.prize and winner.prize.raffle_event else None
+            create_audit_log(
+                user=request.user,
+                org=org,
+                action='update',
+                model='RaffleParticipant',
+                object_id=winner.id,
+                changes={
+                    'is_printed': True,
+                    'printed_at': timezone.now().isoformat()
+                },
+                request=request
+            )
+        
+        return Response({
+            'message': f'Marked {updated_count} winners as printed',
+            'updated_count': updated_count
+        })
+    
+    @action(detail=False, methods=['post'], url_path='unmark-printed')
+    def unmark_printed(self, request):
+        """Unmark winners as printed (bulk operation)"""
+        org_id = getattr(request, 'org_id', None)
+        if not org_id:
+            return Response(
+                {'error': 'Organization ID not found'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        winner_ids = request.data.get('winner_ids', [])
+        if not winner_ids or not isinstance(winner_ids, list):
+            return Response(
+                {'error': 'winner_ids is required and must be a list'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get queryset filtered by org
+        queryset = RaffleParticipant.objects.filter(
+            id__in=winner_ids,
+            prize__raffle_event__org_id=org_id
+        )
+        
+        if queryset.count() != len(winner_ids):
+            return Response(
+                {'error': 'Some winners not found or do not belong to this organization'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Update print status
+        updated_count = queryset.update(
+            is_printed=False,
+            printed_at=None
+        )
+        
+        # Create audit log
+        for winner in queryset:
+            org = winner.prize.raffle_event.org if winner.prize and winner.prize.raffle_event else None
+            create_audit_log(
+                user=request.user,
+                org=org,
+                action='update',
+                model='RaffleParticipant',
+                object_id=winner.id,
+                changes={
+                    'is_printed': False,
+                    'printed_at': None
+                },
+                request=request
+            )
+        
+        return Response({
+            'message': f'Unmarked {updated_count} winners as printed',
+            'updated_count': updated_count
+        })
+    
     def perform_update(self, serializer):
         """Override to add audit log on update"""
         old_participant = self.get_object()
@@ -941,6 +1054,9 @@ class RaffleParticipantViewSet(viewsets.ModelViewSet):
         # Get filter parameters
         search = request.query_params.get('search', '')
         prize_id = request.query_params.get('prize')
+        only_unprinted = request.query_params.get('only_unprinted', 'false').lower() == 'true'
+        start_index = request.query_params.get('start_index')
+        end_index = request.query_params.get('end_index')
         
         # Get queryset (same logic as list, but without pagination)
         queryset = RaffleParticipant.objects.select_related(
@@ -953,8 +1069,18 @@ class RaffleParticipantViewSet(viewsets.ModelViewSet):
         if prize_id:
             queryset = queryset.filter(prize_id=prize_id)
         
-        # Order by selected_at descending
+        # Filter by print status
+        if only_unprinted:
+            queryset = queryset.filter(is_printed=False)
+        
+        # Order by selected_at descending (newest first = rank 1)
         queryset = queryset.order_by('-selected_at')
+        
+        # Apply range selection if provided
+        if start_index or end_index:
+            start = int(start_index) - 1 if start_index else 0  # Convert to 0-based index
+            end = int(end_index) if end_index else None  # end_index is inclusive, so use as-is for slicing
+            queryset = queryset[start:end]
         
         # Get raffle event and org info
         try:
@@ -989,12 +1115,14 @@ class RaffleParticipantViewSet(viewsets.ModelViewSet):
             except Prize.DoesNotExist:
                 pass
         
-        # Prepare data for template
+        # Prepare data for template with rank (ลำดับรางวัล)
         winners_data = []
-        for winner in queryset:
+        for rank, winner in enumerate(queryset, start=1):
             winners_data.append({
-                'id': winner.id,
+                'rank': rank,  # ลำดับรางวัล (1-based)
+                'id': winner.id,  # Keep ID for reference
                 'participant_name': winner.participant.name if winner.participant else '',
+                'hospital_id': winner.participant.hospital_id if winner.participant and winner.participant.hospital_id else '',
                 'prize_name': winner.prize.name if winner.prize else '',
                 'department': winner.participant.department.name if winner.participant and winner.participant.department else '',
             })
@@ -1035,6 +1163,9 @@ class RaffleParticipantViewSet(viewsets.ModelViewSet):
         # Get filter parameters
         search = request.query_params.get('search', '')
         prize_id = request.query_params.get('prize')
+        only_unprinted = request.query_params.get('only_unprinted', 'false').lower() == 'true'
+        start_index = request.query_params.get('start_index')
+        end_index = request.query_params.get('end_index')
         
         # Get queryset (same logic as export_pdf)
         queryset = RaffleParticipant.objects.select_related(
@@ -1047,8 +1178,18 @@ class RaffleParticipantViewSet(viewsets.ModelViewSet):
         if prize_id:
             queryset = queryset.filter(prize_id=prize_id)
         
-        # Order by selected_at descending
+        # Filter by print status
+        if only_unprinted:
+            queryset = queryset.filter(is_printed=False)
+        
+        # Order by selected_at descending (newest first = rank 1)
         queryset = queryset.order_by('-selected_at')
+        
+        # Apply range selection if provided
+        if start_index or end_index:
+            start = int(start_index) - 1 if start_index else 0  # Convert to 0-based index
+            end = int(end_index) if end_index else None  # end_index is inclusive, so use as-is for slicing
+            queryset = queryset[start:end]
         
         # Create workbook
         wb = Workbook()
@@ -1056,23 +1197,25 @@ class RaffleParticipantViewSet(viewsets.ModelViewSet):
         ws.title = "รายชื่อผู้ได้รับรางวัล"
         
         # Set header row
-        headers = ['ID', 'ชื่อผู้ได้รับรางวัล', 'รางวัล', 'หน่วยงาน', 'ลงชื่อ']
+        headers = ['ลำดับรางวัล', 'ID โรงพยาบาล', 'ชื่อผู้ได้รับรางวัล', 'รางวัล', 'หน่วยงาน', 'ลงชื่อ']
         for col_idx, header in enumerate(headers, start=1):
             cell = ws.cell(row=1, column=col_idx, value=header)
             cell.font = Font(bold=True)
             cell.fill = PatternFill(start_color="E8E8E8", end_color="E8E8E8", fill_type="solid")
             cell.alignment = Alignment(horizontal="center", vertical="center")
         
-        # Write data
-        for idx, winner in enumerate(queryset, start=2):
-            ws.cell(row=idx, column=1, value=winner.id)
-            ws.cell(row=idx, column=2, value=winner.participant.name if winner.participant else '')
-            ws.cell(row=idx, column=3, value=winner.prize.name if winner.prize else '')
-            ws.cell(row=idx, column=4, value=winner.participant.department.name if winner.participant and winner.participant.department else '')
-            ws.cell(row=idx, column=5, value='')  # ลงชื่อ - ว่างไว้ให้เซ็น
+        # Write data with rank (ลำดับรางวัล)
+        for rank, winner in enumerate(queryset, start=1):
+            row_idx = rank + 1  # +1 for header row
+            ws.cell(row=row_idx, column=1, value=rank)  # ลำดับรางวัล
+            ws.cell(row=row_idx, column=2, value=winner.participant.hospital_id if winner.participant and winner.participant.hospital_id else '')  # ID โรงพยาบาล
+            ws.cell(row=row_idx, column=3, value=winner.participant.name if winner.participant else '')  # ชื่อผู้ได้รับรางวัล
+            ws.cell(row=row_idx, column=4, value=winner.prize.name if winner.prize else '')  # รางวัล
+            ws.cell(row=row_idx, column=5, value=winner.participant.department.name if winner.participant and winner.participant.department else '')  # หน่วยงาน
+            ws.cell(row=row_idx, column=6, value='')  # ลงชื่อ - ว่างไว้ให้เซ็น
         
         # Auto-adjust column widths
-        column_widths = [10, 35, 25, 20, 15]  # ID, Name, Prize, Department, ลงชื่อ
+        column_widths = [12, 15, 35, 25, 20, 15]  # ลำดับรางวัล, ID โรงพยาบาล, Name, Prize, Department, ลงชื่อ
         for col_idx, width in enumerate(column_widths, start=1):
             ws.column_dimensions[ws.cell(row=1, column=col_idx).column_letter].width = width
         
@@ -1203,6 +1346,7 @@ class RaffleControlViewSet(viewsets.ViewSet):
         
         channel_layer = get_channel_layer()
         if channel_layer:
+            # Send spin command
             async_to_sync(channel_layer.group_send)(
                 f'raffle_{raffle_event_id}',
                 {
@@ -1211,6 +1355,30 @@ class RaffleControlViewSet(viewsets.ViewSet):
                     'data': {
                         'prize_id': prize_id,
                         'display_count': display_count
+                    },
+                    'timestamp': datetime.now().isoformat()
+                }
+            )
+            # Send play sound command to display device
+            async_to_sync(channel_layer.group_send)(
+                f'raffle_{raffle_event_id}',
+                {
+                    'type': 'control_action',
+                    'action': 'play_sound',
+                    'data': {
+                        'sound_file': 'wheel.mp3'
+                    },
+                    'timestamp': datetime.now().isoformat()
+                }
+            )
+            # Send spin state to disable other devices
+            async_to_sync(channel_layer.group_send)(
+                f'raffle_{raffle_event_id}',
+                {
+                    'type': 'control_action',
+                    'action': 'spin_state',
+                    'data': {
+                        'isSpinning': True
                     },
                     'timestamp': datetime.now().isoformat()
                 }
@@ -1236,12 +1404,25 @@ class RaffleControlViewSet(viewsets.ViewSet):
         
         channel_layer = get_channel_layer()
         if channel_layer:
+            # Send save command
             async_to_sync(channel_layer.group_send)(
                 f'raffle_{raffle_event_id}',
                 {
                     'type': 'control_action',
                     'action': 'save',
                     'data': {},
+                    'timestamp': datetime.now().isoformat()
+                }
+            )
+            # Send spin state to re-enable other devices
+            async_to_sync(channel_layer.group_send)(
+                f'raffle_{raffle_event_id}',
+                {
+                    'type': 'control_action',
+                    'action': 'spin_state',
+                    'data': {
+                        'isSpinning': False
+                    },
                     'timestamp': datetime.now().isoformat()
                 }
             )

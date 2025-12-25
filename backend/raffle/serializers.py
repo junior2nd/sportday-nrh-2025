@@ -77,6 +77,7 @@ class PrizeSerializer(serializers.ModelSerializer):
 class RaffleParticipantSerializer(serializers.ModelSerializer):
     participant_name = serializers.CharField(source='participant.name', read_only=True)
     participant_department = serializers.CharField(source='participant.department.name', read_only=True, allow_null=True)
+    participant_hospital_id = serializers.IntegerField(source='participant.hospital_id', read_only=True, allow_null=True)
     prize_name = serializers.CharField(source='prize.name', read_only=True)
     prize_round = serializers.IntegerField(source='prize.round_number', read_only=True)
     
@@ -84,7 +85,8 @@ class RaffleParticipantSerializer(serializers.ModelSerializer):
         model = RaffleParticipant
         fields = [
             'id', 'prize', 'prize_name', 'prize_round', 'participant', 'participant_name',
-            'participant_department', 'selected_at', 'seed_value'
+            'participant_department', 'participant_hospital_id', 'selected_at', 'seed_value',
+            'is_printed', 'printed_at'
         ]
         read_only_fields = ['selected_at']
 
