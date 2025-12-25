@@ -14,6 +14,12 @@ const ibmPlexSansThai = IBM_Plex_Sans_Thai({
 export const metadata: Metadata = {
   title: "NRSport - Event Platform",
   description: "ระบบกลางสำหรับจัดกิจกรรมหน่วยงาน",
+  viewport: {
+    width: 'device-width',
+    initialScale: 1,
+    maximumScale: 5,
+    userScalable: true,
+  },
 };
 
 export default function RootLayout({

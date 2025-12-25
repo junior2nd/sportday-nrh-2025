@@ -67,7 +67,9 @@ export default function WinnersList({ raffleEventId, refreshTrigger = 0, selecte
   const { isConnected, lastMessage } = useWebSocket({
     url: wsUrl,
     onMessage: (message) => {
-      if (message.type === 'winners_update' || message.type === 'raffle_result') {
+      // ฟังเฉพาะ winners_update เท่านั้น (ส่งจาก saveWinners API)
+      // ไม่ฟัง raffle_result เพราะมันส่งตอน spin (ยังไม่บันทึก)
+      if (message.type === 'winners_update') {
         // Update winners list when new winners are saved
         console.log('WebSocket: winners updated, reloading...');
         loadWinners();

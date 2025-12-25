@@ -54,6 +54,24 @@ export default function RaffleDisplayPage() {
   const selectedSeedRef = useRef<string>('');
   const selectedRuleSnapshotRef = useRef<any>(null);
   const selectedResultRef = useRef<any>(null);
+  
+  // Audio ref for spin sound
+  const spinSoundRef = useRef<HTMLAudioElement | null>(null);
+
+  // Initialize audio
+  useEffect(() => {
+    if (typeof Audio !== 'undefined') {
+      spinSoundRef.current = new Audio('/audio/wheel2.mp3');
+      spinSoundRef.current.preload = 'auto';
+    }
+    
+    return () => {
+      if (spinSoundRef.current) {
+        spinSoundRef.current.pause();
+        spinSoundRef.current = null;
+      }
+    };
+  }, []);
 
   // Check authentication
   useEffect(() => {
@@ -165,6 +183,14 @@ export default function RaffleDisplayPage() {
 
       console.log('Calling selectWinners API with prize:', prize.id, 'quantity:', quantity);
 
+      // เล่นเสียง wheel2.mp3
+      if (spinSoundRef.current) {
+        spinSoundRef.current.currentTime = 0; // Reset to start
+        spinSoundRef.current.play().catch((err: any) => {
+          console.error('Error playing spin sound:', err);
+        });
+      }
+
       // Call API to select winners (does not save)
       const result = await raffleApi.selectWinners(prize.id, quantity);
       
@@ -217,10 +243,10 @@ export default function RaffleDisplayPage() {
           }, cardStartDelay + spinDuration);
         });
 
-        // เปิดเผยผลลัพธ์หลังจาก animation เสร็จทั้งหมด
+        // เปิดเผยผลลัพธ์หลังจาก animation เสร็จทั้งหมด - แสดงบนจอ
         const lastCardDelay = (result.winners.length - 1) * staggerDelay;
         setTimeout(() => {
-          // แสดงผลลัพธ์หลังจาก animation เสร็จ
+          // แสดงผลลัพธ์บนจอหลัง animation เสร็จ (แต่ยังไม่บันทึก)
           setCurrentWinners(result.winners);
           setRevealedWinners(result.winners);
           // อย่า reset isSpinning ที่นี่ - ให้ disable ปุ่ม Spin จนกว่าจะบันทึก
@@ -412,7 +438,8 @@ export default function RaffleDisplayPage() {
       return;
     }
     // ตรวจสอบว่ามี winners ที่ยังไม่ได้บันทึกหรือไม่
-    const hasUnsavedWinners = revealedWinners.length > 0 || 
+    const hasUnsavedWinners = selectedWinners.length > 0 || 
+                               revealedWinners.length > 0 || 
                                (currentWinners.length > 0 && currentWinners.some(w => w && w.id));
     if (hasUnsavedWinners) {
       setError('กรุณาบันทึกรางวัลก่อนทำการจับสลากครั้งใหม่');
@@ -439,6 +466,14 @@ export default function RaffleDisplayPage() {
       // Use displayCount as quantity (limit to available prizes)
       const availableQuantity = selectedPrize.quantity - selectedPrize.selected_count;
       const quantity = Math.min(displayCount, availableQuantity);
+
+      // เล่นเสียง wheel2.mp3
+      if (spinSoundRef.current) {
+        spinSoundRef.current.currentTime = 0; // Reset to start
+        spinSoundRef.current.play().catch((err: any) => {
+          console.error('Error playing spin sound:', err);
+        });
+      }
 
       // Call API to select winners (does not save)
       const result = await raffleApi.selectWinners(selectedPrize.id, quantity);
@@ -491,10 +526,10 @@ export default function RaffleDisplayPage() {
           }, cardStartDelay + spinDuration);
         });
 
-        // เปิดเผยผลลัพธ์หลังจาก animation เสร็จทั้งหมด
+        // เปิดเผยผลลัพธ์หลังจาก animation เสร็จทั้งหมด - แสดงบนจอ
         const lastCardDelay = (result.winners.length - 1) * staggerDelay;
         setTimeout(() => {
-          // แสดงผลลัพธ์หลังจาก animation เสร็จ
+          // แสดงผลลัพธ์บนจอหลัง animation เสร็จ (แต่ยังไม่บันทึก)
           setCurrentWinners(result.winners);
           setRevealedWinners(result.winners);
           // อย่า reset isSpinning ที่นี่ - ให้ disable ปุ่ม Spin จนกว่าจะบันทึก
@@ -521,12 +556,12 @@ export default function RaffleDisplayPage() {
     console.log('handleSaveClick - selectedWinners:', selectedWinners);
     console.log('handleSaveClick - currentWinners:', currentWinners);
     
-    if (revealedWinners.length > 0) {
+    // ใช้ selectedWinners เป็นหลัก (เก็บไว้ตอน spin)
+    if (selectedWinners.length > 0) {
+      winnersToSave = selectedWinners;
+    } else if (revealedWinners.length > 0) {
       // ถ้ามี revealedWinners ใช้เลย (animation เสร็จแล้ว)
       winnersToSave = revealedWinners;
-    } else if (selectedWinners.length > 0) {
-      // ถ้ายังไม่มี revealedWinners แต่มี selectedWinners ใช้แทน (เก็บไว้ตอน spin)
-      winnersToSave = selectedWinners;
     } else {
       // ตรวจสอบว่า currentWinners มี id property หรือไม่ (ไม่ใช่ placeholder)
       const validCurrentWinners = currentWinners.filter(w => w && w.id !== undefined);
@@ -605,6 +640,7 @@ export default function RaffleDisplayPage() {
       const participantIds = winnersToSave.map(w => w.id);
       
       // Call API to save winners (ใช้ ref เพื่อให้ได้ข้อมูลล่าสุด)
+      // หลังจากบันทึกสำเร็จแล้ว - WinnersList จะ refresh อัตโนมัติผ่าน WebSocket หรือ refreshTrigger
       await raffleApi.saveWinners(
         prize.id,
         participantIds,
@@ -612,6 +648,9 @@ export default function RaffleDisplayPage() {
         selectedRuleSnapshotRef.current,
         selectedResultRef.current
       );
+      
+      // หลังจากบันทึกสำเร็จแล้ว - WinnersList จะ refresh อัตโนมัติผ่าน WebSocket หรือ refreshTrigger
+      // ผลลัพธ์จะแสดงใน WinnersList (ฝั่งซ้าย) หลังจากบันทึกแล้วเท่านั้น
       
       // Refresh prize data to update dropdown
       await loadPrizes();
@@ -750,7 +789,7 @@ export default function RaffleDisplayPage() {
                     loading || 
                     availablePrizes.length === 0 || 
                     isSpinning || 
-                    (revealedWinners.length > 0 || (currentWinners.length > 0 && currentWinners.some(w => w && w.id)))
+                    (selectedWinners.length > 0 || revealedWinners.length > 0 || (currentWinners.length > 0 && currentWinners.some(w => w && w.id)))
                   }
                 >
                   <option value="">-- เลือกประเภทรางวัล --</option>
@@ -772,7 +811,7 @@ export default function RaffleDisplayPage() {
                   disabled={
                     !selectedPrize || 
                     isSpinning || 
-                    (revealedWinners.length > 0 || (currentWinners.length > 0 && currentWinners.some(w => w && w.id)))
+                    (selectedWinners.length > 0 || revealedWinners.length > 0 || (currentWinners.length > 0 && currentWinners.some(w => w && w.id)))
                   }
                 >
                   <option value="1">1</option>
@@ -793,7 +832,7 @@ export default function RaffleDisplayPage() {
                   !selectedPrize || 
                   loading || 
                   !canSpinRaffle() ||
-                  (revealedWinners.length > 0 || (currentWinners.length > 0 && currentWinners.some(w => w && w.id)))
+                  (selectedWinners.length > 0 || revealedWinners.length > 0 || (currentWinners.length > 0 && currentWinners.some(w => w && w.id)))
                 }
                 className='bg-amber-300 hover:bg-amber-400 border-amber-400 border-2 rounded-lg col-span-2 disabled:opacity-50 disabled:cursor-not-allowed'
                 title={
@@ -801,7 +840,7 @@ export default function RaffleDisplayPage() {
                     ? 'คุณได้รางวัลแล้วในการจับสลาก' 
                     : isSpinning 
                     ? 'กำลังหมุน...' 
-                    : (revealedWinners.length > 0 || (currentWinners.length > 0 && currentWinners.some(w => w && w.id)))
+                    : (selectedWinners.length > 0 || revealedWinners.length > 0 || (currentWinners.length > 0 && currentWinners.some(w => w && w.id)))
                     ? 'กรุณาบันทึกรางวัลก่อนทำการจับสลากครั้งใหม่'
                     : ''
                 }

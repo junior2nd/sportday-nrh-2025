@@ -6,7 +6,7 @@ import { raffleApi, Prize } from '@/lib/api/raffle';
 import { Lock } from 'lucide-react';
 import { useWebSocket } from '@/lib/hooks/useWebSocket';
 
-const MOBILE_CONTROLLER_PASSWORD = '1089710897';
+const MOBILE_CONTROLLER_PASSWORD = '10897';
 const DISPLAY_COUNTS = [1, 2, 3, 6, 10, 20, 30];
 
 export default function MobileControllerPage() {
@@ -215,7 +215,11 @@ export default function MobileControllerPage() {
             
             <button
               onClick={handleLogin}
-              className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold shadow-lg"
+              onTouchStart={(e) => {
+                e.preventDefault();
+                handleLogin();
+              }}
+              className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 active:bg-blue-800 font-semibold shadow-lg touch-manipulation"
             >
               เข้าสู่ระบบ
             </button>
@@ -293,12 +297,13 @@ export default function MobileControllerPage() {
                 <button
                   key={count}
                   onClick={() => handleDisplayCountChange(count)}
+                  onTouchStart={() => handleDisplayCountChange(count)}
                   disabled={hasSpun || !selectedPrize || loading || remoteIsSpinning}
                   className={`
-                    px-4 py-4 rounded-xl font-bold text-lg transition-all duration-200
+                    px-4 py-4 rounded-xl font-bold text-lg transition-all duration-200 touch-manipulation
                     ${isSelected 
                       ? 'bg-blue-500 text-white shadow-lg scale-105 border-2 border-blue-300' 
-                      : 'bg-gray-700 text-gray-200 hover:bg-gray-600 border-2 border-gray-600'
+                      : 'bg-gray-700 text-gray-200 hover:bg-gray-600 active:bg-gray-500 border-2 border-gray-600'
                     }
                     ${hasSpun || !selectedPrize || loading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
                   `}
@@ -315,13 +320,19 @@ export default function MobileControllerPage() {
           {/* Spin Button */}
           <button
             onClick={handleSpin}
+            onTouchStart={(e) => {
+              if (!loading && selectedPrize && !hasSpun && !remoteIsSpinning) {
+                e.preventDefault();
+                handleSpin();
+              }
+            }}
             disabled={loading || !selectedPrize || hasSpun || remoteIsSpinning}
             className={`
               w-full px-8 py-8 rounded-2xl font-bold text-3xl shadow-2xl
-              transition-all duration-200 transform
+              transition-all duration-200 transform touch-manipulation
               ${hasSpun || !selectedPrize || loading
                 ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                : 'bg-gradient-to-r from-amber-500 to-orange-600 text-white hover:from-amber-600 hover:to-orange-700 active:scale-95'
+                : 'bg-gradient-to-r from-amber-500 to-orange-600 text-white hover:from-amber-600 hover:to-orange-700 active:scale-95 active:from-amber-700 active:to-orange-800'
               }
             `}
           >
@@ -331,13 +342,19 @@ export default function MobileControllerPage() {
           {/* Save Button */}
           <button
             onClick={handleSave}
+            onTouchStart={(e) => {
+              if (!loading && hasSpun && !remoteIsSpinning) {
+                e.preventDefault();
+                handleSave();
+              }
+            }}
             disabled={loading || !hasSpun || remoteIsSpinning}
             className={`
               w-full px-8 py-6 rounded-2xl font-bold text-2xl shadow-2xl
-              transition-all duration-200 transform
+              transition-all duration-200 transform touch-manipulation
               ${!hasSpun || loading
                 ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                : 'bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:from-green-600 hover:to-emerald-700 active:scale-95'
+                : 'bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:from-green-600 hover:to-emerald-700 active:scale-95 active:from-green-700 active:to-emerald-800'
               }
             `}
           >
