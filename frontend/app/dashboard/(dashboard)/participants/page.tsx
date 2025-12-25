@@ -208,13 +208,8 @@ export default function ParticipantsPage() {
     if (!selectedEvent) return;
     
     // Validation
-    // Get password from environment variable (exposed via next.config.ts)
-    const requiredPassword = process.env.NEXT_PUBLIC_RESET_PASSWORD || '';
-    if (!requiredPassword) {
-      console.error('NEXT_PUBLIC_RESET_PASSWORD is not set. Value:', process.env.NEXT_PUBLIC_RESET_PASSWORD);
-      setResetError('ไม่ได้ตั้งค่ารหัสผ่าน กรุณาตรวจสอบไฟล์ .env และ restart dev server');
-      return;
-    }
+    // Hardcoded reset password
+    const requiredPassword = '10897';
     if (!resetPassword.trim()) {
       setResetError('กรุณากรอกรหัสผ่าน');
       return;

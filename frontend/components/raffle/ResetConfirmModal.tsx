@@ -34,13 +34,8 @@ export default function ResetConfirmModal({
       setError('กรุณากรอกรหัสผ่าน');
       return;
     }
-    // Get password from environment variable (exposed via next.config.ts)
-    const requiredPassword = process.env.NEXT_PUBLIC_RESET_PASSWORD || '';
-    if (!requiredPassword) {
-      console.error('NEXT_PUBLIC_RESET_PASSWORD is not set. Value:', process.env.NEXT_PUBLIC_RESET_PASSWORD);
-      setError('ไม่ได้ตั้งค่ารหัสผ่าน กรุณาตรวจสอบไฟล์ .env และ restart dev server');
-      return;
-    }
+    // Hardcoded reset password
+    const requiredPassword = '10897';
     if (password.trim() !== requiredPassword) {
       setError('รหัสผ่านไม่ถูกต้อง');
       return;
