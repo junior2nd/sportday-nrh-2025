@@ -262,12 +262,18 @@ export default function MobileControllerPage() {
                   <button
                     key={prize.id}
                     onClick={() => handlePrizeSelect(prize)}
+                    onTouchStart={(e) => {
+                      if (!hasSpun && !loading && !remoteIsSpinning) {
+                        e.preventDefault();
+                        handlePrizeSelect(prize);
+                      }
+                    }}
                     disabled={hasSpun || loading || remoteIsSpinning}
                     className={`
-                      px-4 py-4 rounded-xl font-semibold text-sm transition-all duration-200
+                      px-4 py-4 rounded-xl font-semibold text-sm transition-all duration-200 touch-manipulation
                       ${isSelected 
                         ? 'bg-amber-500 text-white shadow-lg scale-105 border-2 border-amber-300' 
-                        : 'bg-gray-700 text-gray-200 hover:bg-gray-600 border-2 border-gray-600'
+                        : 'bg-gray-700 text-gray-200 hover:bg-gray-600 active:bg-gray-500 border-2 border-gray-600'
                       }
                       ${hasSpun || loading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
                     `}
@@ -297,7 +303,12 @@ export default function MobileControllerPage() {
                 <button
                   key={count}
                   onClick={() => handleDisplayCountChange(count)}
-                  onTouchStart={() => handleDisplayCountChange(count)}
+                  onTouchStart={(e) => {
+                    if (!hasSpun && selectedPrize && !loading && !remoteIsSpinning) {
+                      e.preventDefault();
+                      handleDisplayCountChange(count);
+                    }
+                  }}
                   disabled={hasSpun || !selectedPrize || loading || remoteIsSpinning}
                   className={`
                     px-4 py-4 rounded-xl font-bold text-lg transition-all duration-200 touch-manipulation
