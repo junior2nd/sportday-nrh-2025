@@ -83,13 +83,25 @@ export default function RaffleFormModal({ isOpen, onClose, onSave, raffle, orgId
 
     try {
       setIsSubmitting(true);
-      const raffleData: Partial<RaffleEvent> = {
-        ...formData,
-        org: orgId,
-        event: Number(formData.event),
-      };
-
-      await onSave(raffleData);
+      
+      if (raffle) {
+        // Update existing raffle - don't include org field and don't change event
+        const updateData: Partial<RaffleEvent> = {
+          name: formData.name,
+          description: formData.description,
+          rules: formData.rules,
+          no_repeat_prize: formData.no_repeat_prize,
+        };
+        await onSave(updateData);
+      } else {
+        // Create new raffle - include org and event fields
+        const createData: Partial<RaffleEvent> = {
+          ...formData,
+          org: orgId!,
+          event: Number(formData.event),
+        };
+        await onSave(createData);
+      }
       onClose();
     } catch (err: any) {
       console.error('Error saving raffle:', err);
@@ -197,7 +209,7 @@ export default function RaffleFormModal({ isOpen, onClose, onSave, raffle, orgId
             <span className="text-sm font-medium text-gray-700">ไม่รับรางวัลซ้ำ</span>
           </label>
           <p className="mt-1 text-xs text-gray-500">
-            ถ้าเปิด ผู้ที่ได้รับรางวัลแล้วจะไม่ถูกเลือกอีกในการจับสลากครั้งถัดไป
+            ถ้าเปิด ผู้ที่ได้ได้รางวัลแล้วจะไม่ถูกเลือกอีกในการจับสลากครั้งถัดไป
           </p>
         </div>
       </form>

@@ -180,7 +180,7 @@ export default function AddEligibleParticipantModal({
 
         <div>
           <label htmlFor="department_id" className="block text-sm font-medium text-gray-700 mb-1">
-            แผนก
+            หน่วยงาน
           </label>
           <select
             id="department_id"

@@ -73,7 +73,14 @@ export default function RaffleDetailModal({ isOpen, onClose, raffle }: RaffleDet
     if (!raffle) return;
     try {
       const data = await raffleApi.listWinners({ raffle_event: raffle.id });
-      setWinners(Array.isArray(data) ? data : []);
+      // Handle paginated response or direct array
+      if (Array.isArray(data)) {
+        setWinners(data);
+      } else if (data && typeof data === 'object' && 'results' in data && Array.isArray(data.results)) {
+        setWinners(data.results);
+      } else {
+        setWinners([]);
+      }
     } catch (err) {
       console.error('Error loading winners:', err);
       setWinners([]);
@@ -392,7 +399,7 @@ export default function RaffleDetailModal({ isOpen, onClose, raffle }: RaffleDet
                           ชื่อ
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          แผนก
+                          หน่วยงาน
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                           สถานะ
@@ -413,7 +420,7 @@ export default function RaffleDetailModal({ isOpen, onClose, raffle }: RaffleDet
                             <td className="px-6 py-4 whitespace-nowrap">
                               {isWinner ? (
                                 <span className="px-2 py-1 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-800">
-                                  ได้รับรางวัลแล้ว
+                                  ได้ได้รางวัลแล้ว
                                 </span>
                               ) : (
                                 <span className="px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800">

@@ -18,7 +18,9 @@ import {
   LogOut,
   Package,
   Building2,
-  Award
+  Award,
+  Monitor,
+  Gamepad2
 } from 'lucide-react';
 import EventExitModal from './EventExitModal';
 import { useEvent } from '@/lib/contexts/EventContext';
@@ -34,15 +36,16 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, roles: ['superadmin', 'org_admin', 'staff', 'viewer'], section: 'MAIN' },
-  { name: 'กิจกรรม', href: '/dashboard/events', icon: Calendar, roles: ['superadmin', 'org_admin', 'staff', 'viewer'], section: 'MAIN' },
-  { name: 'แผนก', href: '/dashboard/departments', icon: Building2, roles: ['superadmin', 'org_admin'], section: 'MAIN' },
   { name: 'รายชื่อ', href: '/dashboard/participants', icon: User, roles: ['superadmin', 'org_admin', 'staff', 'viewer'], section: 'MAIN' },
   { name: 'ทีม', href: '/dashboard/teams', icon: Users, roles: ['superadmin', 'org_admin', 'staff', 'viewer'], section: 'กีฬา', hidden: true },
   { name: 'กีฬา', href: '/dashboard/sports', icon: Trophy, roles: ['superadmin', 'org_admin', 'staff', 'viewer'], section: 'กีฬา', hidden: true },
   { name: 'ลงคะแนน', href: '/dashboard/sports/score', icon: Edit3, roles: ['superadmin', 'org_admin', 'staff', 'viewer'], section: 'กีฬา', hidden: true },
-  { name: 'จับสลาก', href: '/dashboard/raffle', icon: Gift, roles: ['superadmin', 'org_admin', 'staff', 'viewer'], section: 'รางวัล' },
-  { name: 'รางวัล', href: '/dashboard/prizes', icon: Package, roles: ['superadmin', 'org_admin', 'staff', 'viewer'], section: 'รางวัล' },
-  { name: 'รายชื่อผู้ได้รับรางวัล', href: '/dashboard/winners', icon: Award, roles: ['superadmin', 'org_admin', 'staff', 'viewer'], section: 'รางวัล' },
+  { name: 'รายชื่อผู้ได้รับรางวัล', href: '/dashboard/winners', icon: Award, roles: ['superadmin', 'org_admin', 'staff', 'viewer'], section: 'MAIN' },
+  { name: 'รางวัล', href: '/dashboard/prizes', icon: Package, roles: ['superadmin', 'org_admin', 'staff', 'viewer'], section: 'MAIN' },
+  { name: 'Controller', href: '/dashboard/controller', icon: Gamepad2, roles: ['superadmin', 'org_admin', 'staff', 'viewer'], section: 'MAIN' },
+  { name: 'จับสลาก', href: '/dashboard/raffle', icon: Gift, roles: ['superadmin', 'org_admin', 'staff', 'viewer'], section: 'Other' },
+  { name: 'กิจกรรม', href: '/dashboard/events', icon: Calendar, roles: ['superadmin', 'org_admin', 'staff', 'viewer'], section: 'Other' },
+  { name: 'หน่วยงาน', href: '/dashboard/departments', icon: Building2, roles: ['superadmin', 'org_admin'], section: 'Other' },
 ];
 
 // Helper function to check if user has required role
@@ -68,6 +71,11 @@ export default function Sidebar({ onLogout }: SidebarProps) {
     startTransition(() => {
       router.push(href);
     });
+  };
+
+  const handleDisplayRaffle = () => {
+    const displayUrl = '/raffle/display?raffle_event=1';
+    window.open(displayUrl, '_blank');
   };
 
   useEffect(() => {
@@ -109,11 +117,21 @@ export default function Sidebar({ onLogout }: SidebarProps) {
         >
           <ChevronRight className="w-5 h-5" />
         </button>
+        {/* Display Raffle Button - Collapsed */}
+        <button
+          onClick={handleDisplayRaffle}
+          className="mb-2 p-3 bg-gradient-to-br from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600 text-white rounded-lg transition-all shadow-lg hover:shadow-xl transform hover:scale-105 flex items-center justify-center w-full"
+          title="แสดงผลการจับสลาก"
+        >
+          <Monitor className="w-5 h-5" />
+        </button>
         {filteredNavItems.map((item) => {
+          // Extract pathname from href (remove query parameters)
+          const itemPath = item.href.split('?')[0];
           // For Dashboard, only match exact path. For others, match path and sub-paths
-          const isActive = item.href === '/dashboard' 
-            ? pathname === item.href
-            : pathname === item.href || pathname?.startsWith(item.href + '/');
+          const isActive = itemPath === '/dashboard' 
+            ? pathname === itemPath
+            : pathname === itemPath || pathname?.startsWith(itemPath + '/');
           const IconComponent = item.icon;
           return (
             <button
@@ -166,6 +184,17 @@ export default function Sidebar({ onLogout }: SidebarProps) {
         </div>
       </div>
 
+      {/* Display Raffle Button - Prominent */}
+      <div className="px-4 pb-4">
+        <button
+          onClick={handleDisplayRaffle}
+          className="w-full bg-gradient-to-r from-red-500 via-orange-500 to-red-600 hover:from-red-600 hover:via-orange-600 hover:to-red-700 text-white font-semibold py-3 px-4 rounded-lg transition-all shadow-lg hover:shadow-xl transform hover:scale-[1.02] flex items-center justify-center space-x-2 border-2 border-red-400"
+        >
+          <Monitor className="w-5 h-5" />
+          <span>แสดงผลการจับสลาก</span>
+        </button>
+      </div>
+
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-4">
         {Object.entries(groupedItems).map(([section, items]) => (
@@ -176,10 +205,12 @@ export default function Sidebar({ onLogout }: SidebarProps) {
               </div>
             )}
             {items.map((item) => {
+              // Extract pathname from href (remove query parameters)
+              const itemPath = item.href.split('?')[0];
               // For Dashboard, only match exact path. For others, match path and sub-paths
-              const isActive = item.href === '/dashboard' 
-                ? pathname === item.href
-                : pathname === item.href || pathname?.startsWith(item.href + '/');
+              const isActive = itemPath === '/dashboard' 
+                ? pathname === itemPath
+                : pathname === itemPath || pathname?.startsWith(itemPath + '/');
               const IconComponent = item.icon;
               return (
                 <button

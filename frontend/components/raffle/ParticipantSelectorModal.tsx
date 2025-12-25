@@ -151,7 +151,7 @@ export default function ParticipantSelectorModal({
                       <div className="flex-1">
                         <p className="text-sm font-medium text-gray-900">{participant.name}</p>
                         {participant.department_name && (
-                          <p className="text-xs text-gray-500 mt-1">แผนก: {participant.department_name}</p>
+                          <p className="text-xs text-gray-500 mt-1">หน่วยงาน: {participant.department_name}</p>
                         )}
                       </div>
                       {isSelected ? (

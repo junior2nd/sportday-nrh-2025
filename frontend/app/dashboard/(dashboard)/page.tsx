@@ -1,28 +1,29 @@
 'use client';
 
 import { useEffect, useState, useMemo, useRef } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { dashboardApi, DashboardData } from '@/lib/api/dashboard';
 import StatsCard from '@/components/dashboard/StatsCard';
 import { useRole } from '@/lib/hooks/useRole';
 import { useHeader } from '@/components/ui/HeaderContext';
+import { useEvent } from '@/lib/contexts/EventContext';
+import { raffleApi, Prize } from '@/lib/api/raffle';
 import Link from 'next/link';
-import { 
-  Calendar, 
-  Users, 
-  Palette, 
-  Trophy, 
-  BarChart3, 
-  Gift, 
-  Activity 
+import {
+  Calendar,
+  Users,
+  Gift,
+  Package
 } from 'lucide-react';
 
 export default function DashboardPage() {
-  const router = useRouter();
   const pathname = usePathname();
-  const { isAdmin, canEdit } = useRole();
+  const { isAdmin } = useRole();
   const { setHeader } = useHeader();
+  const { selectedEvent } = useEvent();
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  const [prizes, setPrizes] = useState<Prize[]>([]);
+  const [prizesLoading, setPrizesLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const lastPathnameRef = useRef<string | null>(null);
@@ -30,6 +31,14 @@ export default function DashboardPage() {
   useEffect(() => {
     loadDashboard();
   }, []);
+
+  useEffect(() => {
+    if (selectedEvent) {
+      loadPrizes();
+    } else {
+      setPrizes([]);
+    }
+  }, [selectedEvent]);
 
   const isAdminValue = isAdmin();
   const actionButton = useMemo(() => {
@@ -72,6 +81,28 @@ export default function DashboardPage() {
     }
   };
 
+  const loadPrizes = async () => {
+    if (!selectedEvent) return;
+
+    try {
+      setPrizesLoading(true);
+      // Get raffle events for this event
+      const raffleEvents = await raffleApi.listEvents({ event: selectedEvent });
+      if (raffleEvents.length > 0) {
+        // Get prizes for the first raffle event
+        const prizesData = await raffleApi.listPrizes({ raffle_event: raffleEvents[0].id });
+        setPrizes(Array.isArray(prizesData) ? prizesData : []);
+      } else {
+        setPrizes([]);
+      }
+    } catch (err) {
+      console.error('Error loading prizes:', err);
+      setPrizes([]);
+    } finally {
+      setPrizesLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -96,12 +127,16 @@ export default function DashboardPage() {
   const events = dashboardData.events || { total: 0, active: 0, completed: 0 };
   const teams = dashboardData.teams || { participants: 0, teams: 0, team_members: 0 };
   const raffle = dashboardData.raffle || { events: 0, prizes: 0, winners: 0 };
-  const sports = dashboardData.sports || { tournaments: 0, matches: 0, completed_matches: 0 };
+
+  // Calculate remaining prizes
+  const totalQuantity = prizes.reduce((sum, prize) => sum + prize.quantity, 0);
+  const totalSelected = prizes.reduce((sum, prize) => sum + (prize.selected_count || 0), 0);
+  const totalRemaining = totalQuantity - totalSelected;
 
   return (
     <div className="space-y-6">
       {/* Statistics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <StatsCard
           title="กิจกรรมทั้งหมด"
           value={events.total}
@@ -109,121 +144,81 @@ export default function DashboardPage() {
           color="green"
         />
         <StatsCard
+          title="ได้รางวัลไปแล้ว"
+          value={raffle.winners}
+          icon={Gift}
+          color="purple"
+        />
+        <StatsCard
+          title="เหลืออีก"
+          value={totalRemaining}
+          icon={Package}
+          color="orange"
+        />
+        <StatsCard
           title="ผู้เข้าร่วม"
           value={teams.participants}
           icon={Users}
           color="blue"
         />
-        <StatsCard
-          title="ทีม"
-          value={teams.teams}
-          icon={Palette}
-          color="purple"
-        />
-        <StatsCard
-          title="การแข่งขัน"
-          value={sports.tournaments}
-          icon={Trophy}
-          color="indigo"
-          className="hidden"
-        />
       </div>
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="bg-white rounded-sm shadow-sm border border-gray-100 p-6 hover:shadow-md transition-shadow">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-            <BarChart3 className="mr-2 w-5 h-5" />
-            สถานะกิจกรรม
-          </h3>
-          <div className="space-y-3">
-            <div className="flex justify-between items-center">
-              <span className="text-gray-600">กำลังดำเนินการ</span>
-              <span className="font-semibold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full text-sm">
-                {events.active}
-              </span>
+      {/* Prize Status Summary */}
+      {selectedEvent ? (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">สถานะรางวัล</h3>
+          {prizesLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
             </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-600">เสร็จสิ้น</span>
-              <span className="font-semibold text-blue-600 bg-blue-50 px-3 py-1 rounded-full text-sm">
-                {events.completed}
-              </span>
+          ) : prizes.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {prizes.map((prize) => {
+                const remaining = prize.quantity - prize.selected_count;
+                const percentage = prize.quantity > 0 ? (prize.selected_count / prize.quantity) * 100 : 0;
+                return (
+                  <div
+                    key={prize.id}
+                    className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="font-medium text-gray-900">{prize.name}</h4>
+                      <span className={`text-sm font-semibold ${remaining === 0 ? 'text-red-600' : remaining <= prize.quantity * 0.2 ? 'text-orange-600' : 'text-green-600'
+                        }`}>
+                        เหลือ {remaining}
+                      </span>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm text-gray-600">
+                        <span>ได้ไปแล้ว: {prize.selected_count}</span>
+                        <span>ทั้งหมด: {prize.quantity}</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2.5">
+                        <div
+                          className={`h-2.5 rounded-full transition-all ${remaining === 0 ? 'bg-red-500' : remaining <= prize.quantity * 0.2 ? 'bg-orange-500' : 'bg-green-500'
+                            }`}
+                          style={{ width: `${Math.min(percentage, 100)}%` }}
+                        ></div>
+                      </div>
+                      <div className="text-xs text-gray-500 text-right">
+                        {percentage.toFixed(0)}% ครบแล้ว
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500">
+              <p>ยังไม่มีรางวัลสำหรับกิจกรรมนี้</p>
+            </div>
+          )}
         </div>
-
-        <div className="bg-white rounded-sm shadow-sm border border-gray-100 p-6 hover:shadow-md transition-shadow">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-            <Gift className="mr-2 w-5 h-5" />
-            จับสลาก
-          </h3>
-          <div className="space-y-3">
-            <div className="flex justify-between items-center">
-              <span className="text-gray-600">การจับสลาก</span>
-              <span className="font-semibold text-gray-900">{raffle.events}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-600">ผู้ชนะ</span>
-              <span className="font-semibold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full text-sm">
-                {raffle.winners}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-sm shadow-sm border border-gray-100 p-6 hover:shadow-md transition-shadow hidden">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-            <Activity className="mr-2 w-5 h-5" />
-            กีฬา
-          </h3>
-          <div className="space-y-3">
-            <div className="flex justify-between items-center">
-              <span className="text-gray-600">นัดแข่งขัน</span>
-              <span className="font-semibold text-gray-900">{sports.matches}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-600">เสร็จสิ้น</span>
-              <span className="font-semibold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full text-sm">
-                {sports.completed_matches}
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Quick Actions */}
-      {canEdit() && (
-        <div className="bg-white rounded-sm shadow-sm border border-gray-100 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">การจัดการด่วน</h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <Link
-              href="/dashboard/events"
-              className="px-4 py-3 bg-emerald-50 text-emerald-700 rounded-lg hover:bg-emerald-100 transition-colors text-center font-medium flex items-center justify-center space-x-2"
-            >
-              <Calendar className="w-5 h-5" />
-              <span>จัดการกิจกรรม</span>
-            </Link>
-            <Link
-              href="/dashboard/teams"
-              className="px-4 py-3 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors text-center font-medium flex items-center justify-center space-x-2"
-            >
-              <Users className="w-5 h-5" />
-              <span>จัดการทีม</span>
-            </Link>
-            <Link
-              href="/dashboard/raffle"
-              className="px-4 py-3 bg-purple-50 text-purple-700 rounded-lg hover:bg-purple-100 transition-colors text-center font-medium flex items-center justify-center space-x-2"
-            >
-              <Gift className="w-5 h-5" />
-              <span>จัดการจับสลาก</span>
-            </Link>
-            <Link
-              href="/dashboard/sports"
-              className="px-4 py-3 bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100 transition-colors text-center font-medium flex items-center justify-center space-x-2 hidden"
-            >
-              <Trophy className="w-5 h-5" />
-              <span>จัดการกีฬา</span>
-            </Link>
+      ) : (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">สถานะรางวัล</h3>
+          <div className="text-center py-8 text-gray-500">
+            <p>กรุณาเลือกกิจกรรมจากหน้า Event Selection เพื่อดูสถานะรางวัล</p>
           </div>
         </div>
       )}

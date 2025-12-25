@@ -14,6 +14,6 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='department',
             name='code',
-            field=models.CharField(blank=True, max_length=50, null=True, validators=[django.core.validators.RegexValidator(message='Code must be alphanumeric with - or _', regex='^[a-zA-Z0-9_-]+$')], verbose_name='รหัสแผนก'),
+            field=models.CharField(blank=True, max_length=50, null=True, validators=[django.core.validators.RegexValidator(message='Code must be alphanumeric with - or _', regex='^[a-zA-Z0-9_-]+$')], verbose_name='รหัสหน่วยงาน'),
         ),
     ]

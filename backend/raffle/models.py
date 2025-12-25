@@ -24,7 +24,7 @@ class RaffleEvent(models.Model):
     no_repeat_prize = models.BooleanField(
         default=False,
         verbose_name="ไม่รับรางวัลซ้ำ",
-        help_text="ถ้าเปิด ผู้ที่ได้รับรางวัลแล้วจะไม่ถูกเลือกอีก"
+        help_text="ถ้าเปิด ผู้ที่ได้ได้รางวัลแล้วจะไม่ถูกเลือกอีก"
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

@@ -127,8 +127,18 @@ export default function PrizeFormModal({ isOpen, onClose, onSave, prize, raffleE
               id="round_number"
               required
               min="1"
-              value={formData.round_number}
-              onChange={(e) => setFormData({ ...formData, round_number: parseInt(e.target.value) || 1 })}
+              value={formData.round_number || ''}
+              onChange={(e) => {
+                const inputValue = e.target.value;
+                if (inputValue === '') {
+                  setFormData({ ...formData, round_number: 0 });
+                } else {
+                  const numValue = parseInt(inputValue, 10);
+                  if (!isNaN(numValue)) {
+                    setFormData({ ...formData, round_number: numValue });
+                  }
+                }
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-sm shadow-sm focus:outline-none focus:ring-emerald-500 focus:border-emerald-500"
             />
           </div>
@@ -142,8 +152,18 @@ export default function PrizeFormModal({ isOpen, onClose, onSave, prize, raffleE
               id="quantity"
               required
               min="1"
-              value={formData.quantity}
-              onChange={(e) => setFormData({ ...formData, quantity: parseInt(e.target.value) || 1 })}
+              value={formData.quantity || ''}
+              onChange={(e) => {
+                const inputValue = e.target.value;
+                if (inputValue === '') {
+                  setFormData({ ...formData, quantity: 0 });
+                } else {
+                  const numValue = parseInt(inputValue, 10);
+                  if (!isNaN(numValue)) {
+                    setFormData({ ...formData, quantity: numValue });
+                  }
+                }
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-sm shadow-sm focus:outline-none focus:ring-emerald-500 focus:border-emerald-500"
             />
           </div>

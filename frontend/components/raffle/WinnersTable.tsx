@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { RaffleParticipant } from '@/lib/api/raffle';
-import { ChevronLeft, ChevronRight, Search, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Search, X, Printer, FileText } from 'lucide-react';
 
 interface WinnersTableProps {
   winners: RaffleParticipant[];
@@ -23,6 +23,9 @@ interface WinnersTableProps {
   markedNames?: Set<string>;
   onMarkName?: (name: string) => void;
   showMarkButton?: boolean;
+  onPrint?: () => void;
+  onExportExcel?: () => void;
+  isExporting?: boolean;
 }
 
 export default function WinnersTable({
@@ -38,6 +41,9 @@ export default function WinnersTable({
   markedNames = new Set(),
   onMarkName,
   showMarkButton = false,
+  onPrint,
+  onExportExcel,
+  isExporting = false,
 }: WinnersTableProps) {
   const totalPages = pagination
     ? Math.ceil(pagination.count / (pagination.pageSize || 20))
@@ -118,10 +124,34 @@ export default function WinnersTable({
               </div>
               <button
                 type="submit"
-                className="px-4 py-2 bg-emerald-600 text-white rounded-full hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
+                className="px-4 py-2 bg-emerald-600 text-white rounded-sm hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
               >
                 ค้นหา
               </button>
+              {onPrint && (
+                <button
+                  type="button"
+                  onClick={onPrint}
+                  disabled={isExporting}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  title="พิมพ์/Preview PDF"
+                >
+                  <Printer className="w-5 h-5" />
+                  <span>{isExporting ? 'กำลังสร้าง...' : 'พิมพ์/Preview'}</span>
+                </button>
+              )}
+              {onExportExcel && (
+                <button
+                  type="button"
+                  onClick={onExportExcel}
+                  disabled={isExporting}
+                  className="px-4 py-2 bg-emerald-600 text-white rounded-sm hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  title="บันทึกเป็น Excel"
+                >
+                  <FileText className="w-5 h-5" />
+                  <span>{isExporting ? 'กำลังสร้าง...' : 'บันทึก Excel'}</span>
+                </button>
+              )}
             </form>
           )}
         </div>
@@ -152,7 +182,7 @@ export default function WinnersTable({
                     รางวัล
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    แผนก
+                    หน่วยงาน
                   </th>
                   {showMarkButton && (
                     <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">

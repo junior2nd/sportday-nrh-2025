@@ -28,28 +28,28 @@ class Organization(models.Model):
 
 
 class Department(models.Model):
-    """แผนก"""
+    """หน่วยงาน"""
     org = models.ForeignKey(
         Organization,
         on_delete=models.CASCADE,
         related_name='departments',
         verbose_name="หน่วยงาน"
     )
-    name = models.CharField(max_length=200, verbose_name="ชื่อแผนก")
+    name = models.CharField(max_length=200, verbose_name="ชื่อหน่วยงาน")
     code = models.CharField(
         max_length=50,
         blank=True,
         null=True,
         validators=[RegexValidator(regex=r'^[a-zA-Z0-9_-]+$', message='Code must be alphanumeric with - or _')],
-        verbose_name="รหัสแผนก"
+        verbose_name="รหัสหน่วยงาน"
     )
     is_active = models.BooleanField(default=True, verbose_name="เปิดใช้งาน")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        verbose_name = "แผนก"
-        verbose_name_plural = "แผนก"
+        verbose_name = "หน่วยงาน"
+        verbose_name_plural = "หน่วยงาน"
         # Note: unique_together with nullable code - multiple NULLs are allowed
         # We handle uniqueness validation in serializer for non-null codes
         unique_together = [['org', 'code']]

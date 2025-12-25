@@ -125,10 +125,18 @@ export default function ScoreEntryPage() {
                 <input
                   type="number"
                   min="0"
-                  value={scores[matchTeam.team]?.value || ''}
-                  onChange={(e) =>
-                    handleScoreChange(matchTeam.team, 'value', Number(e.target.value))
-                  }
+                  value={scores[matchTeam.team]?.value ?? ''}
+                  onChange={(e) => {
+                    const inputValue = e.target.value;
+                    if (inputValue === '') {
+                      handleScoreChange(matchTeam.team, 'value', null);
+                    } else {
+                      const numValue = Number(inputValue);
+                      if (!isNaN(numValue)) {
+                        handleScoreChange(matchTeam.team, 'value', numValue);
+                      }
+                    }
+                  }}
                   className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                   placeholder="กรอกคะแนน"
                 />
@@ -141,14 +149,14 @@ export default function ScoreEntryPage() {
           <button
             type="button"
             onClick={() => router.back()}
-            className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 transition-colors"
+            className="px-4 py-2 border border-gray-300 rounded-sm text-gray-700 hover:bg-gray-50 transition-colors"
           >
             ยกเลิก
           </button>
           <button
             type="submit"
             disabled={submitting}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 bg-blue-600 text-white rounded-sm hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {submitting ? 'กำลังบันทึก...' : 'บันทึกคะแนน'}
           </button>

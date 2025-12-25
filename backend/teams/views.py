@@ -2,6 +2,12 @@ from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
+from django.http import HttpResponse
+from django.template.loader import render_to_string
+from pathlib import Path
+from openpyxl import load_workbook
+from openpyxl.styles import Font, PatternFill, Alignment
+from datetime import datetime
 from .models import Participant, Team, TeamMember
 from .serializers import (
     ParticipantSerializer, TeamSerializer, TeamDetailSerializer, TeamMemberSerializer
@@ -31,6 +37,12 @@ class ParticipantViewSet(viewsets.ModelViewSet):
             event_id = self.request.query_params.get('event')
             if event_id:
                 queryset = queryset.filter(event_id=event_id)
+            
+            # Support filtering by department_name (custom filter)
+            department_name = self.request.query_params.get('department_name')
+            if department_name:
+                queryset = queryset.filter(department__name=department_name)
+            
             return queryset
         if self.request.user.is_superadmin():
             return Participant.objects.all()
@@ -47,6 +59,96 @@ class ParticipantViewSet(viewsets.ModelViewSet):
         
         serializer = self.get_serializer(participant)
         return Response(serializer.data)
+    
+    @action(detail=False, methods=['get'], url_path='departments')
+    def list_departments(self, request):
+        """Get unique departments for participants in a specific event"""
+        event_id = request.query_params.get('event')
+        org_id = getattr(request, 'org_id', None)
+        
+        if not org_id:
+            return Response(
+                {'error': 'Organization context required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get queryset
+        queryset = Participant.objects.filter(org_id=org_id)
+        if event_id:
+            queryset = queryset.filter(event_id=event_id)
+        
+        # Get unique departments from participants
+        # Use .values() with .distinct() and then convert to list to ensure uniqueness
+        departments = queryset.filter(
+            department__isnull=False
+        ).values('department__id', 'department__name').distinct()
+        
+        # Convert to set to ensure uniqueness (in case distinct() doesn't work as expected)
+        # Then convert back to list
+        unique_departments = {}
+        for dept in departments:
+            dept_id = dept['department__id']
+            dept_name = dept['department__name']
+            if dept_id and dept_name and dept_id not in unique_departments:
+                unique_departments[dept_id] = dept_name
+        
+        # Format response
+        department_list = [
+            {'id': dept_id, 'name': dept_name}
+            for dept_id, dept_name in unique_departments.items()
+        ]
+        
+        # Sort by name
+        department_list.sort(key=lambda x: x['name'])
+        
+        return Response(department_list)
+    
+    @action(detail=False, methods=['post'], url_path='reset-all-eligibility')
+    def reset_all_eligibility(self, request):
+        """Reset all participants' raffle eligibility to True for a specific event"""
+        event_id = request.data.get('event_id')
+        
+        if not event_id:
+            return Response(
+                {'error': 'event_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        org_id = getattr(request, 'org_id', None)
+        if not org_id:
+            return Response(
+                {'error': 'Organization context required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Update all participants in the event to have eligibility = True
+        updated_count = Participant.objects.filter(
+            org_id=org_id,
+            event_id=event_id
+        ).update(is_raffle_eligible=True)
+        
+        # Audit log
+        from core.models import Organization
+        org = Organization.objects.get(id=org_id)
+        create_audit_log(
+            user=request.user,
+            org=org,
+            action='bulk_update',
+            model='Participant',
+            changes={
+                'event_id': event_id,
+                'action': 'reset_all_eligibility',
+                'updated_count': updated_count,
+                'is_raffle_eligible': True
+            },
+            request=request
+        )
+        
+        return Response({
+            'success': True,
+            'updated_count': updated_count,
+            'message': f'Reset eligibility for {updated_count} participants'
+        })
     
     def destroy(self, request, *args, **kwargs):
         """Override to handle delete with reason and audit log"""
@@ -282,6 +384,191 @@ class ParticipantViewSet(viewsets.ModelViewSet):
             'updated_count': updated_count,
             'total_rows': result['total_rows']
         })
+    
+    @action(detail=False, methods=['get'], url_path='export-excel')
+    def export_participants_excel(self, request):
+        """Export participants to Excel using template"""
+        org_id = getattr(request, 'org_id', None)
+        if not org_id:
+            return Response(
+                {'error': 'Organization ID not found'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        event_id = request.query_params.get('event')
+        if not event_id:
+            return Response(
+                {'error': 'Event ID is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get filter parameters
+        search = request.query_params.get('search', '')
+        department_name = request.query_params.get('department_name', '')
+        
+        # Get queryset (same logic as list, but without pagination)
+        queryset = Participant.objects.filter(org_id=org_id, event_id=event_id)
+        
+        if search:
+            queryset = queryset.filter(name__icontains=search)
+        
+        if department_name:
+            queryset = queryset.filter(department__name=department_name)
+        
+        # Order by hospital_id, then name
+        queryset = queryset.order_by('hospital_id', 'name').select_related('department')
+        
+        # Load template
+        # Template path: backend/excel_templates/template1.xlsx
+        BASE_DIR = Path(__file__).resolve().parent.parent
+        template_path = BASE_DIR / 'excel_templates' / 'template1.xlsx'
+        
+        if not template_path.exists():
+            return Response(
+                {'error': 'Template file not found'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        
+        # Load workbook from template
+        wb = load_workbook(template_path)
+        ws = wb.active
+        
+        # Check existing headers in row 1
+        existing_headers = []
+        for col in range(1, 10):  # Check up to 10 columns
+            header_value = ws.cell(row=1, column=col).value
+            if header_value:
+                existing_headers.append(str(header_value))
+            else:
+                break
+        
+        # Determine signature column
+        signature_col = 4  # Default to column D
+        
+        # If no headers exist, create them
+        if not existing_headers:
+            headers = ['ID โรงพยาบาล', 'ชื่อ-นามสกุล', 'หน่วยงาน', 'ลงชื่อ']
+            for col_idx, header in enumerate(headers, start=1):
+                cell = ws.cell(row=1, column=col_idx, value=header)
+                cell.font = Font(bold=True)
+                cell.fill = PatternFill(start_color="E8E8E8", end_color="E8E8E8", fill_type="solid")
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+            signature_col = 4
+        # If headers exist but "ลงชื่อ" column is missing, add it
+        elif 'ลงชื่อ' not in existing_headers:
+            # Find the last column with header
+            last_col = len(existing_headers) + 1
+            cell = ws.cell(row=1, column=last_col, value='ลงชื่อ')
+            cell.font = Font(bold=True)
+            cell.fill = PatternFill(start_color="E8E8E8", end_color="E8E8E8", fill_type="solid")
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            signature_col = last_col
+        else:
+            # Find the column index of "ลงชื่อ"
+            for idx, header in enumerate(existing_headers, start=1):
+                if 'ลงชื่อ' in str(header):
+                    signature_col = idx
+                    break
+        
+        # Data starts from row 2 (row 1 is header)
+        start_row = 2
+        
+        # Write data
+        # Column A = hospital_id
+        # Column B = name
+        # Column C = department
+        # signature_col = ลงชื่อ (empty for signature)
+        for idx, participant in enumerate(queryset, start=start_row):
+            ws.cell(row=idx, column=1, value=participant.hospital_id if participant.hospital_id else '')
+            ws.cell(row=idx, column=2, value=participant.name)
+            ws.cell(row=idx, column=3, value=participant.department.name if participant.department else '')
+            ws.cell(row=idx, column=signature_col, value='')  # ลงชื่อ - ว่างไว้ให้เซ็น
+        
+        # Create HTTP response
+        response = HttpResponse(
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        
+        # Generate filename
+        filename = f'participants_{event_id}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx'
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        
+        # Save workbook to response
+        wb.save(response)
+        
+        return response
+    
+    @action(detail=False, methods=['get'], url_path='export-pdf')
+    def export_participants_pdf(self, request):
+        """Export participants to PDF for printing"""
+        org_id = getattr(request, 'org_id', None)
+        if not org_id:
+            return Response(
+                {'error': 'Organization ID not found'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        event_id = request.query_params.get('event')
+        if not event_id:
+            return Response(
+                {'error': 'Event ID is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get filter parameters
+        search = request.query_params.get('search', '')
+        department_name = request.query_params.get('department_name', '')
+        
+        # Get queryset (same logic as list, but without pagination)
+        queryset = Participant.objects.filter(org_id=org_id, event_id=event_id)
+        
+        if search:
+            queryset = queryset.filter(name__icontains=search)
+        
+        if department_name:
+            queryset = queryset.filter(department__name=department_name)
+        
+        # Order by hospital_id, then name
+        queryset = queryset.order_by('hospital_id', 'name').select_related('department', 'event', 'org')
+        
+        # Get event and org info
+        from core.models import Event
+        try:
+            event = Event.objects.get(id=event_id, org_id=org_id)
+            org = event.org if hasattr(event, 'org') else None
+        except Event.DoesNotExist:
+            event = None
+            org = None
+        
+        # Fallback to first participant's event/org if event query fails
+        if not event and queryset.exists():
+            first_participant = queryset.first()
+            event = first_participant.event
+            org = first_participant.org
+        
+        # Prepare data for template
+        participants_data = []
+        for participant in queryset:
+            participants_data.append({
+                'hospital_id': participant.hospital_id if participant.hospital_id else '',
+                'name': participant.name,
+                'department': participant.department.name if participant.department else '',
+            })
+        
+        # Render HTML template
+        html_content = render_to_string('teams/participants_print.html', {
+            'participants': participants_data,
+            'event_name': event.name if event else '',
+            'org_name': org.name if org else '',
+            'search_query': search,
+            'department_filter': department_name,
+            'print_date': datetime.now().strftime('%d/%m/%Y %H:%M:%S'),
+            'total_count': len(participants_data),
+        })
+        
+        # Return HTML response (frontend will handle printing)
+        response = HttpResponse(html_content, content_type='text/html; charset=utf-8')
+        return response
 
 
 class TeamViewSet(viewsets.ModelViewSet):

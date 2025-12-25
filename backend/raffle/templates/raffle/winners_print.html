@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>รายชื่อผู้ได้รับรางวัล - {{ raffle_name }}</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 1.5cm;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Sarabun', 'Kanit', 'Prompt', 'TH Sarabun New', sans-serif;
+            font-size: 14px;
+            line-height: 1.6;
+            color: #000;
+            background: #fff;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #333;
+        }
+        
+        .header h1 {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        
+        .header h2 {
+            font-size: 18px;
+            font-weight: normal;
+            color: #555;
+            margin-bottom: 5px;
+        }
+        
+        .info-section {
+            margin-bottom: 20px;
+            font-size: 12px;
+            color: #666;
+        }
+        
+        .info-section p {
+            margin: 3px 0;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            page-break-inside: auto;
+        }
+        
+        thead {
+            display: table-header-group;
+            background-color: #f5f5f5;
+        }
+        
+        tbody tr {
+            page-break-inside: avoid;
+            page-break-after: auto;
+        }
+        
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        
+        th {
+            background-color: #e8e8e8;
+            font-weight: bold;
+            font-size: 13px;
+            text-align: center;
+        }
+        
+        td {
+            font-size: 12px;
+        }
+        
+        tbody tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        
+        .no-print {
+            display: none;
+        }
+        
+        .print-actions {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            background: white;
+            padding: 15px;
+            border: 2px solid #333;
+            border-radius: 5px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .print-actions button {
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .print-actions button:hover {
+            background: #1d4ed8;
+        }
+        
+        .print-actions button.print-btn {
+            background: #059669;
+        }
+        
+        .print-actions button.print-btn:hover {
+            background: #047857;
+        }
+        
+        .footer {
+            margin-top: 30px;
+            padding-top: 15px;
+            border-top: 1px solid #ddd;
+            text-align: center;
+            font-size: 11px;
+            color: #666;
+        }
+        
+        @media print {
+            .print-actions {
+                display: none;
+            }
+            
+            body {
+                margin: 0;
+            }
+            
+            .header {
+                page-break-after: avoid;
+            }
+            
+            thead {
+                display: table-header-group;
+            }
+            
+            tfoot {
+                display: table-footer-group;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="print-actions no-print">
+        <button class="print-btn" onclick="window.print()">🖨️ พิมพ์</button>
+        <button onclick="window.close()">❌ ปิด</button>
+    </div>
+    
+    <div class="header">
+        <h1>รายชื่อผู้ได้รับรางวัล</h1>
+        {% if raffle_name %}
+        <h2>{{ raffle_name }}</h2>
+        {% elif event_name %}
+        <h2>{{ event_name }}</h2>
+        {% endif %}
+        {% if org_name %}
+        <h2>{{ org_name }}</h2>
+        {% endif %}
+    </div>
+    
+    <div class="info-section">
+        {% if search_query %}
+        <p><strong>ค้นหา:</strong> {{ search_query }}</p>
+        {% endif %}
+        {% if prize_filter %}
+        <p><strong>รางวัล:</strong> {{ prize_filter }}</p>
+        {% endif %}
+        <p><strong>จำนวนทั้งหมด:</strong> {{ total_count }} คน</p>
+        <p><strong>วันที่พิมพ์:</strong> {{ print_date }}</p>
+    </div>
+    
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 8%;">ID</th>
+                <th style="width: 30%;">ชื่อผู้ได้รับรางวัล</th>
+                <th style="width: 25%;">รางวัล</th>
+                <th style="width: 22%;">หน่วยงาน</th>
+                <th style="width: 15%;">ลงชื่อ</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for winner in winners %}
+            <tr>
+                <td style="text-align: center;">{{ winner.id }}</td>
+                <td>{{ winner.participant_name }}</td>
+                <td>{{ winner.prize_name }}</td>
+                <td>{{ winner.department }}</td>
+                <td style="text-align: center; min-height: 40px;">&nbsp;</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="5" style="text-align: center; padding: 20px;">ไม่พบข้อมูล</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    
+    <div class="footer">
+        <p>พิมพ์จากระบบ NRSport</p>
+        <p>หน้า 1</p>
+    </div>
+    
+    <script>
+        // Auto focus for print dialog
+        window.onload = function() {
+            // Optionally auto-trigger print dialog
+            // Uncomment the line below if you want auto-print
+            // window.print();
+        };
+    </script>
+</body>
+</html>
+

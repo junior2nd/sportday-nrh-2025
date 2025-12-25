@@ -29,7 +29,7 @@ class Participant(models.Model):
         null=True,
         blank=True,
         related_name='participants',
-        verbose_name="แผนก"
+        verbose_name="หน่วยงาน"
     )
     is_raffle_eligible = models.BooleanField(
         default=True,

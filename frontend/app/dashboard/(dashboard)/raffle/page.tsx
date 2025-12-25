@@ -7,7 +7,7 @@ import { useRole } from '@/lib/hooks/useRole';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useHeader } from '@/components/ui/HeaderContext';
 import { useEvent } from '@/lib/contexts/EventContext';
-import { useRaffleEvents, useDeleteRaffleEvent } from '@/lib/hooks/data/useRaffle';
+import { useRaffleEvents, useDeleteRaffleEvent, useCreateRaffleEvent, useUpdateRaffleEvent } from '@/lib/hooks/data/useRaffle';
 import { useModal } from '@/lib/hooks/ui/useModal';
 import dynamic from 'next/dynamic';
 
@@ -39,6 +39,8 @@ export default function RafflePage() {
     event: selectedEvent || undefined,
   });
   const deleteMutation = useDeleteRaffleEvent();
+  const createMutation = useCreateRaffleEvent();
+  const updateMutation = useUpdateRaffleEvent();
 
   const formModal = useModal<RaffleEvent>();
   const deleteModal = useModal<RaffleEvent>();
@@ -60,9 +62,24 @@ export default function RafflePage() {
     detailModal.open(raffle);
   }, [detailModal]);
 
-  const handleSave = useCallback(async () => {
-    formModal.close();
-  }, [formModal]);
+  const handleSave = useCallback(async (raffleData: Partial<RaffleEvent>) => {
+    try {
+      if (formModal.selectedItem) {
+        // Update existing raffle event
+        await updateMutation.mutateAsync({
+          id: formModal.selectedItem.id,
+          data: raffleData,
+        });
+      } else {
+        // Create new raffle event
+        await createMutation.mutateAsync(raffleData);
+      }
+      formModal.close();
+    } catch (err: any) {
+      // Error will be handled by RaffleFormModal
+      throw err;
+    }
+  }, [formModal, createMutation, updateMutation]);
 
   const handleDelete = useCallback(async (reason: string) => {
     if (!deleteModal.selectedItem) return;

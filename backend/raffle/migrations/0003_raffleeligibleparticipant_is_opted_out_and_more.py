@@ -13,7 +13,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='raffleeligibleparticipant',
             name='is_opted_out',
-            field=models.BooleanField(default=True, help_text='ถ้าเปิด หมายความว่าสละสิทธิ์รับรางวัล', verbose_name='สละสิทธิ์'),
+            field=models.BooleanField(default=True, help_text='ถ้าเปิด หมายความว่าได้รางวัลแล้วรับรางวัล', verbose_name='ได้รางวัลแล้ว'),
         ),
         migrations.AddField(
             model_name='raffleeligibleparticipant',
@@ -23,6 +23,6 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='raffleevent',
             name='no_repeat_prize',
-            field=models.BooleanField(default=False, help_text='ถ้าเปิด ผู้ที่ได้รับรางวัลแล้วจะไม่ถูกเลือกอีก', verbose_name='ไม่รับรางวัลซ้ำ'),
+            field=models.BooleanField(default=False, help_text='ถ้าเปิด ผู้ที่ได้ได้รางวัลแล้วจะไม่ถูกเลือกอีก', verbose_name='ไม่รับรางวัลซ้ำ'),
         ),
     ]

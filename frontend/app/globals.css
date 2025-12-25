@@ -18,6 +18,16 @@ body {
   background-color: rgb(249 250 251); /* bg-gray-50 */
 }
 
+/* Hide scrollbar utility class */
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;  /* Chrome, Safari and Opera */
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
@@ -35,5 +45,121 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background-color: rgb(156 163 175); /* bg-gray-400 */
+}
+
+/* Print Styles */
+@media print {
+  /* Hide elements that shouldn't be printed */
+  header,
+  aside,
+  nav,
+  button:not(.print-show),
+  .print\:hidden,
+  [class*="print:hidden"],
+  .no-print {
+    display: none !important;
+  }
+
+  /* Hide action buttons and filters */
+  .print\:hide,
+  [class*="print:hide"] {
+    display: none !important;
+  }
+
+  /* Page setup */
+  @page {
+    size: A4;
+    margin: 1cm;
+  }
+
+  /* Body and container styles for print */
+  body {
+    background: white !important;
+    color: black !important;
+    font-size: 12pt;
+    line-height: 1.5;
+  }
+
+  /* Table styles for print */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    page-break-inside: auto;
+  }
+
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+
+  tfoot {
+    display: table-footer-group;
+  }
+
+  /* Ensure table headers appear on each page */
+  thead tr {
+    page-break-after: avoid;
+  }
+
+  /* Print-friendly table borders */
+  th,
+  td {
+    border: 1px solid #ddd !important;
+    padding: 8px !important;
+    text-align: left;
+  }
+
+  th {
+    background-color: #f3f4f6 !important;
+    font-weight: bold;
+    color: black !important;
+  }
+
+  /* Remove shadows and backgrounds that waste ink */
+  * {
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  /* Ensure links are visible */
+  a {
+    color: black !important;
+    text-decoration: underline;
+  }
+
+  /* Page breaks */
+  .page-break-before {
+    page-break-before: always;
+  }
+
+  .page-break-after {
+    page-break-after: always;
+  }
+
+  .page-break-inside-avoid {
+    page-break-inside: avoid;
+  }
+
+  /* Print header */
+  .print-header {
+    display: block;
+    text-align: center;
+    margin-bottom: 20px;
+    font-size: 18pt;
+    font-weight: bold;
+  }
+
+  /* Print footer */
+  .print-footer {
+    display: block;
+    text-align: center;
+    margin-top: 20px;
+    font-size: 10pt;
+    color: #666;
+  }
 }
 

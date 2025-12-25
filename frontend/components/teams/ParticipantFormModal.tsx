@@ -248,7 +248,7 @@ export default function ParticipantFormModal({
 
         <div>
           <label htmlFor="department" className="block text-sm font-medium text-gray-700 mb-1">
-            แผนก
+            หน่วยงาน
           </label>
           <select
             id="department"
@@ -256,7 +256,7 @@ export default function ParticipantFormModal({
             onChange={(e) => setFormData({ ...formData, department: e.target.value ? parseInt(e.target.value) : null })}
             className="w-full px-3 py-2 border border-gray-300 rounded-sm shadow-sm focus:outline-none focus:ring-emerald-500 focus:border-emerald-500"
           >
-            <option value="">-- เลือกแผนก (ไม่บังคับ) --</option>
+            <option value="">-- เลือกหน่วยงาน (ไม่บังคับ) --</option>
             {departments.map((dept) => (
               <option key={dept.id} value={dept.id}>
                 {dept.name}

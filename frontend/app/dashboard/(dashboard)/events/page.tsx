@@ -7,7 +7,7 @@ import { Event } from '@/lib/api/events';
 import { useRole } from '@/lib/hooks/useRole';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useHeader } from '@/components/ui/HeaderContext';
-import { useEvents, useDeleteEvent } from '@/lib/hooks/data/useEvents';
+import { useEvents, useDeleteEvent, useCreateEvent, useUpdateEvent } from '@/lib/hooks/data/useEvents';
 import { useModal } from '@/lib/hooks/ui/useModal';
 import { formatDateShort } from '@/lib/utils/format';
 import dynamic from 'next/dynamic';
@@ -36,6 +36,8 @@ export default function EventsPage() {
 
   const { data: events = [], isLoading, error } = useEvents();
   const deleteMutation = useDeleteEvent();
+  const createMutation = useCreateEvent();
+  const updateMutation = useUpdateEvent();
 
   const formModal = useModal<Event>();
   const deleteModal = useModal<Event>();
@@ -57,9 +59,24 @@ export default function EventsPage() {
     detailModal.open(event);
   }, [detailModal]);
 
-  const handleSave = useCallback(() => {
-    formModal.close();
-  }, [formModal]);
+  const handleSave = useCallback(async (eventData: EventCreate | Partial<EventCreate>) => {
+    try {
+      if (formModal.selectedItem) {
+        // Update existing event
+        await updateMutation.mutateAsync({
+          id: formModal.selectedItem.id,
+          data: eventData,
+        });
+      } else {
+        // Create new event
+        await createMutation.mutateAsync(eventData as EventCreate);
+      }
+      formModal.close();
+    } catch (err: any) {
+      // Error will be handled by EventFormModal
+      throw err;
+    }
+  }, [formModal, createMutation, updateMutation]);
 
   const handleDelete = useCallback(async (reason: string) => {
     if (!deleteModal.selectedItem) return;

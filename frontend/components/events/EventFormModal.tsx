@@ -76,19 +76,26 @@ export default function EventFormModal({ isOpen, onClose, onSave, event, orgId }
 
     try {
       setIsSubmitting(true);
-      const eventData: EventCreate | Partial<EventCreate> = {
-        ...formData,
-        org: orgId,
-        start_date: new Date(formData.start_date).toISOString(),
-        end_date: new Date(formData.end_date).toISOString(),
-      };
-
+      
       if (event) {
-        // Update existing event
-        await onSave(eventData);
+        // Update existing event - don't include org field
+        const updateData: Partial<EventCreate> = {
+          name: formData.name,
+          description: formData.description,
+          start_date: new Date(formData.start_date).toISOString(),
+          end_date: new Date(formData.end_date).toISOString(),
+          status: formData.status,
+        };
+        await onSave(updateData);
       } else {
-        // Create new event
-        await onSave(eventData as EventCreate);
+        // Create new event - include org field
+        const createData: EventCreate = {
+          ...formData,
+          org: orgId!,
+          start_date: new Date(formData.start_date).toISOString(),
+          end_date: new Date(formData.end_date).toISOString(),
+        };
+        await onSave(createData);
       }
       onClose();
     } catch (err: any) {

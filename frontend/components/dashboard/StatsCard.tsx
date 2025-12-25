@@ -6,7 +6,7 @@ interface StatsCardProps {
   title: string;
   value: string | number;
   icon: LucideIcon;
-  color?: 'blue' | 'green' | 'yellow' | 'purple' | 'red' | 'indigo';
+  color?: 'blue' | 'green' | 'yellow' | 'purple' | 'red' | 'indigo' | 'orange';
   trend?: {
     value: number;
     isPositive: boolean;
@@ -22,6 +22,7 @@ export default function StatsCard({ title, value, icon: Icon, color = 'green', t
     purple: 'bg-purple-600 text-white',
     red: 'bg-red-600 text-white',
     indigo: 'bg-indigo-600 text-white',
+    orange: 'bg-orange-600 text-white',
   };
 
   return (

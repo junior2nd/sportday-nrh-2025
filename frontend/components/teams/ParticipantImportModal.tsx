@@ -244,7 +244,7 @@ export default function ParticipantImportModal({
                           <td className="px-4 py-2 text-sm text-gray-600">12345</td>
                           <td className="px-4 py-2 text-sm text-gray-600">สมชาย</td>
                           <td className="px-4 py-2 text-sm text-gray-600">ใจดี</td>
-                          <td className="px-4 py-2 text-sm text-gray-600">แผนก IT</td>
+                          <td className="px-4 py-2 text-sm text-gray-600">หน่วยงาน IT</td>
                         </tr>
                       </tbody>
                     </table>
@@ -256,7 +256,7 @@ export default function ParticipantImportModal({
                     <li><strong>ID:</strong> รหัสประจำตัวจากระบบโรงพยาบาล (ไม่บังคับ)</li>
                     <li><strong>ชื่อ:</strong> ชื่อจริงของผู้เข้าร่วม (จำเป็น)</li>
                     <li><strong>นามสกุล:</strong> นามสกุลของผู้เข้าร่วม (จำเป็น)</li>
-                    <li><strong>หน่วยงาน:</strong> ชื่อแผนก/หน่วยงาน (จะสร้างใหม่อัตโนมัติถ้ายังไม่มี)</li>
+                    <li><strong>หน่วยงาน:</strong> ชื่อหน่วยงาน/หน่วยงาน (จะสร้างใหม่อัตโนมัติถ้ายังไม่มี)</li>
                   </ul>
                   <p className="text-xs text-blue-700 mt-2">
                     <strong>หมายเหตุ:</strong> ระบบจะรวมชื่อและนามสกุลเป็นชื่อเต็ม และจะอัปเดตรายชื่อที่มีอยู่แล้วถ้าชื่อซ้ำ
@@ -266,8 +266,8 @@ export default function ParticipantImportModal({
                   <p className="text-xs text-gray-800 font-medium mb-1">ตัวอย่างไฟล์ CSV:</p>
                   <pre className="text-xs text-gray-600 bg-white p-2 rounded border overflow-x-auto">
 {`ID,ชื่อ,นามสกุล,หน่วยงาน
-12345,สมชาย,ใจดี,แผนก IT
-67890,สมหญิง,รักดี,แผนก HR`}
+12345,สมชาย,ใจดี,หน่วยงาน IT
+67890,สมหญิง,รักดี,หน่วยงาน HR`}
                   </pre>
                 </div>
               </div>

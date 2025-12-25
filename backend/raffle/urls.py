@@ -51,6 +51,7 @@ router.register(r'prizes', views.PrizeViewSet, basename='prize')
 router.register(r'participants', views.RaffleParticipantViewSet, basename='raffle-participant')
 # Note: eligible-participants endpoint removed - use Participant model directly with is_raffle_eligible field
 router.register(r'logs', views.RaffleLogViewSet, basename='raffle-log')
+router.register(r'control', views.RaffleControlViewSet, basename='raffle-control')
 
 urlpatterns = [
     path('', include(router.urls)),

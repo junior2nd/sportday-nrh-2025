@@ -119,9 +119,14 @@ export default function LandingPage() {
         raffle_event: 1, // Default to event 1, can be made dynamic
       });
 
-      // Check if any winner matches the name exactly
+      // Check if any winner matches the name (partial match - supports searching by part of the name)
+      const searchTerm = name.trim().toLowerCase();
       const foundWinner = response.results?.find(
-        (w) => w.participant_name.trim().toLowerCase() === name.trim().toLowerCase()
+        (w) => {
+          const participantName = (w.participant_name || '').trim().toLowerCase();
+          // Support partial match - check if search term is contained in the name
+          return participantName.includes(searchTerm) || searchTerm.includes(participantName);
+        }
       );
 
       if (foundWinner) {
@@ -213,7 +218,7 @@ export default function LandingPage() {
               คุณสามารถตรวจสอบรายชื่อผู้ที่ลงทะเบียนเข้าร่วมงานจับสลากปีใหม่ 2569<br className="hidden sm:block" />
               โดยสามารถค้นหาด้วยชื่อเพื่อยืนยันว่าคุณได้ลงทะเบียนเรียบร้อยแล้วและมีสิทธิ์์เข้าร่วมการจับสลาก
             </p>
-            <form
+            {/* <form
               onSubmit={handleCheckName}
               className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mt-4 w-full"
             >
@@ -232,12 +237,12 @@ export default function LandingPage() {
               >
                 {checking ? 'กำลังตรวจสอบ...' : 'ตรวจสอบ'}
               </button>
-            </form>
+            </form> */}
             <Link 
               href="/raffle/participants"
               className='mt-4 text-emerald-50 hover:text-white underline underline-offset-1 transition-colors text-center md:text-left block'
             >
-              ตรวจสอบข้อมูลอย่างละเอียด
+              ตรวจสอบข้อมูล
             </Link>
           </div>
         </div>
@@ -259,7 +264,7 @@ export default function LandingPage() {
               คุณสามารถตรวจสอบว่าคุณได้รับรางวัลจากการจับสลากหรือไม่<br className="hidden sm:block" />
               โดยสามารถค้นหาด้วยชื่อเพื่อดูรางวัลที่คุณได้รับและรายละเอียดการจับสลาก
             </p>
-            <form
+            {/* <form
               onSubmit={handleCheckWinner}
               className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mt-4 w-full"
             >
@@ -278,7 +283,7 @@ export default function LandingPage() {
               >
                 {checkingWinner ? 'กำลังตรวจสอบ...' : 'ตรวจสอบรางวัล'}
               </button>
-            </form>
+            </form> */}
             <Link 
               href="/raffle/winners?raffle_event=1"
               className='mt-4 text-emerald-50 hover:text-white underline underline-offset-1 transition-colors text-center md:text-left block'
@@ -334,7 +339,7 @@ export default function LandingPage() {
                       ชื่อ-นามสกุล
                     </th>
                     <th className="px-4 py-2 text-left text-xs font-semibold text-emerald-700 uppercase tracking-wider">
-                      แผนก
+                      หน่วยงาน
                     </th>
                     <th className="px-4 py-2 text-center text-xs font-semibold text-emerald-700 uppercase tracking-wider">
                       สถานะ
@@ -384,7 +389,7 @@ export default function LandingPage() {
               ชื่อที่ค้นหา: <span className="font-semibold text-gray-700">{searchQuery}</span>
             </p>
             <p className="text-base text-gray-500">
-              ไม่พบรายชื่อที่ตรงกับการค้นหา หรือไม่มีสิทธิ์์เข้าร่วมการจับสลาก
+              ไม่พบรายชื่อที่ตรงกับการค้นหา หรือได้รางวัลแล้วเข้าร่วมการจับสลาก
             </p>
             <p className="text-sm text-gray-400 mt-2">
               กรุณาตรวจสอบชื่ออีกครั้ง หรือลองค้นหาแบบละเอียดที่{' '}
@@ -421,7 +426,7 @@ export default function LandingPage() {
               </p>
               {winnerInfo.participant_department && (
                 <p className="text-sm text-gray-600">
-                  <span className="font-semibold">แผนก:</span> {winnerInfo.participant_department}
+                  <span className="font-semibold">หน่วยงาน:</span> {winnerInfo.participant_department}
                 </p>
               )}
             </div>

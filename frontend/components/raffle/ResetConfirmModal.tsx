@@ -7,7 +7,7 @@ import { AlertTriangle } from 'lucide-react';
 interface ResetConfirmModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (reason: string) => Promise<void>;
+  onConfirm: (password: string) => Promise<void>;
   title: string;
   itemName?: string;
   isResetAll?: boolean;
@@ -21,7 +21,7 @@ export default function ResetConfirmModal({
   itemName,
   isResetAll = false,
 }: ResetConfirmModalProps) {
-  const [reason, setReason] = useState('');
+  const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -30,19 +30,26 @@ export default function ResetConfirmModal({
     setError('');
 
     // Validation
-    if (!reason.trim()) {
-      setError('กรุณากรอกเหตุผล');
+    if (!password.trim()) {
+      setError('กรุณากรอกรหัสผ่าน');
       return;
     }
-    if (reason.trim().length < 10) {
-      setError('เหตุผลต้องมีอย่างน้อย 10 ตัวอักษร');
+    // Get password from environment variable (exposed via next.config.ts)
+    const requiredPassword = process.env.NEXT_PUBLIC_RESET_PASSWORD || '';
+    if (!requiredPassword) {
+      console.error('NEXT_PUBLIC_RESET_PASSWORD is not set. Value:', process.env.NEXT_PUBLIC_RESET_PASSWORD);
+      setError('ไม่ได้ตั้งค่ารหัสผ่าน กรุณาตรวจสอบไฟล์ .env และ restart dev server');
+      return;
+    }
+    if (password.trim() !== requiredPassword) {
+      setError('รหัสผ่านไม่ถูกต้อง');
       return;
     }
 
     try {
       setIsSubmitting(true);
-      await onConfirm(reason.trim());
-      setReason('');
+      await onConfirm(password.trim());
+      setPassword('');
       onClose();
     } catch (err: any) {
       console.error('Error resetting:', err);
@@ -58,7 +65,7 @@ export default function ResetConfirmModal({
 
   const handleClose = () => {
     if (!isSubmitting) {
-      setReason('');
+      setPassword('');
       setError('');
       onClose();
     }
@@ -82,7 +89,7 @@ export default function ResetConfirmModal({
           <button
             type="submit"
             form="reset-form"
-            disabled={isSubmitting || !reason.trim() || reason.trim().length < 10}
+            disabled={isSubmitting || !password.trim()}
             className="px-4 py-2 text-sm font-medium text-white bg-orange-600 rounded-sm hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isSubmitting ? 'กำลังรีเซ็ต...' : 'ยืนยันรีเซ็ต'}
@@ -102,21 +109,21 @@ export default function ResetConfirmModal({
               )}
             </p>
             <div>
-              <label htmlFor="reason" className="block text-sm font-medium text-gray-700 mb-1">
-                เหตุผล <span className="text-red-500">*</span>
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+                รหัสผ่าน <span className="text-red-500">*</span>
               </label>
-              <textarea
-                id="reason"
+              <input
+                id="password"
+                type="password"
                 required
-                rows={4}
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-sm shadow-sm focus:outline-none focus:ring-orange-500 focus:border-orange-500"
-                placeholder="กรุณากรอกเหตุผลในการรีเซ็ต (อย่างน้อย 10 ตัวอักษร)"
+                placeholder="กรุณากรอกรหัสผ่าน"
                 disabled={isSubmitting}
               />
               <p className="mt-1 text-xs text-gray-500">
-                จำนวนตัวอักษร: {reason.length} / 10 (ขั้นต่ำ)
+                กรุณากรอกรหัสผ่านเพื่อยืนยันการรีเซ็ต
               </p>
             </div>
           </div>

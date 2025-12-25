@@ -77,10 +77,17 @@ export default function ParticipantsPage() {
     }
   }, [searchParams, currentPage, searchQuery]);
 
-  // Load participants when component mounts or when page/searchQuery changes
+  // Load participants only when searchQuery is provided
   useEffect(() => {
-    loadParticipants();
-  }, [loadParticipants]);
+    if (searchQuery) {
+      loadParticipants();
+    } else {
+      setParticipants([]);
+      setPagination(null);
+      setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, currentPage]);
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
@@ -156,166 +163,170 @@ export default function ParticipantsPage() {
             </div>
           )}
 
-          {/* Search Bar */}
-          <div className="bg-white rounded-full shadow-lg border border-gray-100 p-4 px-6 mb-6">
-            <form onSubmit={handleSearchSubmit} className="flex gap-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+          {/* Search Bar - Main Focus */}
+          <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6 sm:p-8 mb-6">
+            <form onSubmit={handleSearchSubmit} className="flex flex-col gap-4">
+              <div className="relative">
+                <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-6 h-6" />
                 <input
                   type="text"
                   value={searchInput}
                   onChange={handleSearchInputChange}
                   placeholder="ค้นหาด้วยชื่อ..."
-                  className="w-full pl-10 pr-10 py-2 border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm sm:text-base"
+                  className="w-full pl-12 pr-12 py-4 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-base sm:text-lg"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
                       handleSearchSubmit(e as any);
                     }
                   }}
+                  autoFocus
                 />
                 {(searchInput || searchQuery) && (
                   <button
                     type="button"
                     onClick={handleClearSearch}
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
                   >
-                    <X className="w-5 h-5" />
+                    <X className="w-6 h-6" />
                   </button>
                 )}
               </div>
               <button
                 type="submit"
-                className="px-4 sm:px-6 py-2 bg-emerald-600 text-white rounded-full hover:bg-emerald-700 transition-colors text-sm sm:text-base"
+                className="w-full px-6 py-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition-colors text-base sm:text-lg font-semibold shadow-md"
+                disabled={loading}
               >
-                ค้นหา
+                {loading ? 'กำลังค้นหา...' : 'ค้นหา'}
               </button>
             </form>
           </div>
 
-          {/* Participants Table */}
-          <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
-            {loading ? (
-              <div className="p-8 text-center">
-                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600"></div>
-                <p className="mt-4 text-gray-600">กำลังโหลดข้อมูล...</p>
-              </div>
-            ) : participants.length === 0 ? (
-              <div className="p-8 text-center">
-                <p className="text-gray-600">ไม่พบรายชื่อผู้ลงทะเบียน</p>
-              </div>
-            ) : (
-              <>
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-emerald-50">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-emerald-700 uppercase tracking-wider">
-                          ลำดับ
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-emerald-700 uppercase tracking-wider">
-                          ชื่อ
-                        </th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-emerald-700 uppercase tracking-wider">
-                          แผนก
-                        </th>
-                        <th className="px-4 py-3 text-center text-xs font-semibold text-emerald-700 uppercase tracking-wider">
-                          สถานะสิทธิ์
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {participants.map((participant, index) => (
-                        <tr
-                          key={participant.id}
-                          className="hover:bg-emerald-50/50 transition-colors"
-                        >
-                          <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-emerald-700">
-                            {participant.hospital_id || '-'}
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap">
-                            <div className="text-sm font-medium text-gray-900">
-                              {participant.name}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
-                            {participant.department_name || '-'}
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-center">
-                            {participant.is_raffle_eligible ? (
-                              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
-                                <CheckCircle2 className="w-4 h-4" />
-                                มีสิทธิ์์
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700">
-                                <XCircle className="w-4 h-4" />
-                                ไม่มีสิทธิ์์
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+          {/* Search Results */}
+          {searchQuery && (
+            <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
+              {loading ? (
+                <div className="p-12 text-center">
+                  <div className="inline-block animate-spin rounded-full h-10 w-10 border-b-2 border-emerald-600"></div>
+                  <p className="mt-4 text-gray-600">กำลังค้นหา...</p>
                 </div>
-
-                {/* Pagination */}
-                {pagination && pagination.count > pageSize && (
-                  <div className="bg-gray-50 px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
-                    <div className="flex-1 flex justify-between sm:hidden">
-                      <button
-                        onClick={() => handlePageChange(currentPage - 1)}
-                        disabled={currentPage === 1}
-                        className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        ก่อนหน้า
-                      </button>
-                      <button
-                        onClick={() => handlePageChange(currentPage + 1)}
-                        disabled={currentPage >= totalPages}
-                        className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        ถัดไป
-                      </button>
-                    </div>
-                    <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-                      <div>
-                        <p className="text-sm text-gray-700">
-                          แสดง <span className="font-medium">{(currentPage - 1) * pageSize + 1}</span> ถึง{' '}
-                          <span className="font-medium">
-                            {Math.min(currentPage * pageSize, pagination.count)}
-                          </span>{' '}
-                          จาก <span className="font-medium">{pagination.count}</span> รายการ
-                        </p>
-                      </div>
-                      <div>
-                        <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
-                          <button
-                            onClick={() => handlePageChange(currentPage - 1)}
-                            disabled={currentPage === 1}
-                            className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            <ChevronLeft className="h-5 w-5" />
-                          </button>
-                          <span className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
-                            หน้า {currentPage} จาก {totalPages}
-                          </span>
-                          <button
-                            onClick={() => handlePageChange(currentPage + 1)}
-                            disabled={currentPage >= totalPages}
-                            className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            <ChevronRight className="h-5 w-5" />
-                          </button>
-                        </nav>
-                      </div>
-                    </div>
+              ) : participants.length === 0 ? (
+                <div className="p-12 text-center">
+                  <Search className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                  <p className="text-lg text-gray-600 mb-2">ไม่พบรายชื่อที่ค้นหา</p>
+                  <p className="text-sm text-gray-500">ลองค้นหาด้วยชื่ออื่น</p>
+                </div>
+              ) : (
+                <>
+                  <div className="p-4 bg-emerald-50 border-b border-gray-200">
+                    <p className="text-sm text-emerald-700">
+                      พบ <span className="font-semibold">{pagination?.count || participants.length}</span> รายการ
+                    </p>
                   </div>
-                )}
-              </>
-            )}
-          </div>
+                  <div className="divide-y divide-gray-200">
+                    {participants.map((participant) => (
+                      <div
+                        key={participant.id}
+                        className="p-4 sm:p-6 hover:bg-emerald-50/50 transition-colors"
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <h3 className="text-lg sm:text-xl font-semibold text-gray-900">
+                                {participant.name}
+                              </h3>
+                              {participant.is_raffle_eligible ? (
+                                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
+                                  <CheckCircle2 className="w-4 h-4" />
+                                  มีสิทธิ์
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700">
+                                  <XCircle className="w-4 h-4" />
+                                  ได้รางวัลแล้ว
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex flex-wrap gap-4 text-sm text-gray-600">
+                              {participant.hospital_id && (
+                                <span>รหัส: <span className="font-medium text-emerald-700">{participant.hospital_id}</span></span>
+                              )}
+                              {participant.department_name && (
+                                <span>หน่วยงาน: <span className="font-medium">{participant.department_name}</span></span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Pagination */}
+                  {pagination && pagination.count > pageSize && (
+                    <div className="bg-gray-50 px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
+                      <div className="flex-1 flex justify-between sm:hidden">
+                        <button
+                          onClick={() => handlePageChange(currentPage - 1)}
+                          disabled={currentPage === 1}
+                          className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          ก่อนหน้า
+                        </button>
+                        <button
+                          onClick={() => handlePageChange(currentPage + 1)}
+                          disabled={currentPage >= totalPages}
+                          className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          ถัดไป
+                        </button>
+                      </div>
+                      <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-sm text-gray-700">
+                            แสดง <span className="font-medium">{(currentPage - 1) * pageSize + 1}</span> ถึง{' '}
+                            <span className="font-medium">
+                              {Math.min(currentPage * pageSize, pagination.count)}
+                            </span>{' '}
+                            จาก <span className="font-medium">{pagination.count}</span> รายการ
+                          </p>
+                        </div>
+                        <div>
+                          <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                            <button
+                              onClick={() => handlePageChange(currentPage - 1)}
+                              disabled={currentPage === 1}
+                              className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <ChevronLeft className="h-5 w-5" />
+                            </button>
+                            <span className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
+                              หน้า {currentPage} จาก {totalPages}
+                            </span>
+                            <button
+                              onClick={() => handlePageChange(currentPage + 1)}
+                              disabled={currentPage >= totalPages}
+                              className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <ChevronRight className="h-5 w-5" />
+                            </button>
+                          </nav>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Empty State - No Search Yet */}
+          {!searchQuery && !loading && (
+            <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-12 text-center">
+              <Search className="w-20 h-20 text-gray-300 mx-auto mb-4" />
+              <h2 className="text-xl font-semibold text-gray-700 mb-2">เริ่มค้นหารายชื่อ</h2>
+              <p className="text-gray-500">กรุณาพิมพ์ชื่อที่ต้องการค้นหาในช่องค้นหาด้านบน</p>
+            </div>
+          )}
         </div>
       </div>
 

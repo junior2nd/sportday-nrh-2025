@@ -34,7 +34,7 @@ class DepartmentSerializer(serializers.ModelSerializer):
             value = value.strip()
             import re
             if not re.match(r'^[a-zA-Z0-9_-]+$', value):
-                raise serializers.ValidationError('รหัสแผนกต้องเป็นตัวอักษร ตัวเลข หรือเครื่องหมาย - และ _ เท่านั้น')
+                raise serializers.ValidationError('รหัสหน่วยงานต้องเป็นตัวอักษร ตัวเลข หรือเครื่องหมาย - และ _ เท่านั้น')
             return value
         
         return value
@@ -52,7 +52,7 @@ class DepartmentSerializer(serializers.ModelSerializer):
                 queryset = queryset.exclude(pk=self.instance.pk)
             if queryset.exists():
                 raise serializers.ValidationError({
-                    'code': 'รหัสแผนกนี้มีอยู่ในหน่วยงานนี้แล้ว'
+                    'code': 'รหัสหน่วยงานนี้มีอยู่ในหน่วยงานนี้แล้ว'
                 })
         
         return attrs

@@ -182,7 +182,7 @@ export default function RaffleParticipantsPage() {
                   ชื่อ-นามสกุล
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  แผนก
+                  หน่วยงาน
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   ทีม
@@ -230,7 +230,7 @@ export default function RaffleParticipantsPage() {
                           ? 'bg-green-100 text-green-800'
                           : 'bg-red-100 text-red-800'
                       }`}>
-                        {participant.is_raffle_eligible ? 'มีสิทธิ์' : 'สละสิทธิ์'}
+                        {participant.is_raffle_eligible ? 'มีสิทธิ์' : 'ได้รางวัลแล้ว'}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">

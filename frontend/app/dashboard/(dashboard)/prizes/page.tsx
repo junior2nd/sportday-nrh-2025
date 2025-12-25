@@ -10,7 +10,7 @@ import { useEvent } from '@/lib/contexts/EventContext';
 import PrizeFormModal from '@/components/raffle/PrizeFormModal';
 import PrizeDetailModal from '@/components/raffle/PrizeDetailModal';
 import DeleteConfirmModal from '@/components/events/DeleteConfirmModal';
-import { Plus, Pencil, Trash2, Info, RotateCcw } from 'lucide-react';
+import { Plus, Pencil, Trash2, Info, RotateCcw, Gift, Trophy, Package } from 'lucide-react';
 import ResetConfirmModal from '@/components/raffle/ResetConfirmModal';
 
 export default function PrizesPage() {
@@ -162,9 +162,12 @@ export default function PrizesPage() {
     setIsResetModalOpen(true);
   };
 
-  const handleReset = async (reason: string) => {
+  const handleReset = async (password: string) => {
     if (!selectedPrize) return;
     try {
+      // Backend API requires reason with at least 10 characters
+      // Format: password + description to meet validation requirement
+      const reason = `Password confirmed: ${password} - Reset prize operation`;
       await raffleApi.resetPrize(selectedPrize.id, reason);
       if (selectedRaffleEvent) {
         loadPrizes(selectedRaffleEvent);
@@ -174,9 +177,12 @@ export default function PrizesPage() {
     }
   };
 
-  const handleResetAll = async (reason: string) => {
+  const handleResetAll = async (password: string) => {
     if (!selectedRaffleEvent) return;
     try {
+      // Backend API requires reason with at least 10 characters
+      // Format: password + description to meet validation requirement
+      const reason = `Password confirmed: ${password} - Reset all prizes operation`;
       await raffleApi.resetAllPrizes(selectedRaffleEvent, reason);
       loadPrizes(selectedRaffleEvent);
     } catch (err: any) {
@@ -253,6 +259,51 @@ export default function PrizesPage() {
           ))}
         </select>
       </div>
+
+      {/* Statistics Summary */}
+      {selectedRaffleEvent && !loading && prizes.length > 0 && (() => {
+        const totalQuantity = prizes.reduce((sum, prize) => sum + prize.quantity, 0);
+        const totalSelected = prizes.reduce((sum, prize) => sum + (prize.selected_count || 0), 0);
+        const totalRemaining = totalQuantity - totalSelected;
+        
+        return (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">จำนวนรางวัลทั้งหมด</p>
+                  <p className="text-3xl font-bold text-gray-900 mt-2">{totalQuantity}</p>
+                </div>
+                <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                  <Trophy className="w-6 h-6 text-blue-600" />
+                </div>
+              </div>
+            </div>
+            <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">ได้ไปแล้วทั้งหมด</p>
+                  <p className="text-3xl font-bold text-gray-900 mt-2">{totalSelected}</p>
+                </div>
+                <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center">
+                  <Gift className="w-6 h-6 text-emerald-600" />
+                </div>
+              </div>
+            </div>
+            <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">เหลืออีก</p>
+                  <p className="text-3xl font-bold text-gray-900 mt-2">{totalRemaining}</p>
+                </div>
+                <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
+                  <Package className="w-6 h-6 text-orange-600" />
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Prizes Table */}
       {!selectedRaffleEvent ? (

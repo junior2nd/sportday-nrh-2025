@@ -4,6 +4,11 @@ from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from django.http import HttpResponse
 from django.conf import settings
+from django.template.loader import render_to_string
+from datetime import datetime
+from pathlib import Path
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment
 from .models import RaffleEvent, Prize, RaffleParticipant, RaffleLog
 from .serializers import (
     RaffleEventSerializer, PrizeSerializer, RaffleParticipantSerializer, RaffleLogSerializer
@@ -757,9 +762,11 @@ class PrizeViewSet(viewsets.ModelViewSet):
         # Broadcast via WebSocket
         from channels.layers import get_channel_layer
         from asgiref.sync import async_to_sync
+        from datetime import datetime
         
         channel_layer = get_channel_layer()
         if channel_layer:
+            # Broadcast raffle_result
             async_to_sync(channel_layer.group_send)(
                 f'raffle_{prize.raffle_event.id}',
                 {
@@ -774,6 +781,25 @@ class PrizeViewSet(viewsets.ModelViewSet):
                         for p in participants
                     ],
                     'seed': seed
+                }
+            )
+            
+            # Broadcast winners_update for WinnersList
+            async_to_sync(channel_layer.group_send)(
+                f'raffle_{prize.raffle_event.id}',
+                {
+                    'type': 'winners_update',
+                    'raffle_event_id': prize.raffle_event.id,
+                    'winners': [
+                        {
+                            'id': p.id,
+                            'participant_name': p.name,
+                            'participant': p.hospital_id,
+                            'selected_at': datetime.now().isoformat()
+                        }
+                        for p in participants
+                    ],
+                    'timestamp': datetime.now().isoformat()
                 }
             )
         
@@ -895,6 +921,175 @@ class RaffleParticipantViewSet(viewsets.ModelViewSet):
         self.perform_destroy(raffle_participant)
         return Response(status=status.HTTP_204_NO_CONTENT)
     
+    @action(detail=False, methods=['get'], url_path='export-pdf')
+    def export_winners_pdf(self, request):
+        """Export winners to PDF for printing"""
+        org_id = getattr(request, 'org_id', None)
+        if not org_id:
+            return Response(
+                {'error': 'Organization ID not found'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        raffle_event_id = request.query_params.get('raffle_event')
+        if not raffle_event_id:
+            return Response(
+                {'error': 'Raffle Event ID is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get filter parameters
+        search = request.query_params.get('search', '')
+        prize_id = request.query_params.get('prize')
+        
+        # Get queryset (same logic as list, but without pagination)
+        queryset = RaffleParticipant.objects.select_related(
+            'prize', 'prize__raffle_event', 'participant', 'participant__department'
+        ).filter(prize__raffle_event_id=raffle_event_id, prize__raffle_event__org_id=org_id)
+        
+        if search:
+            queryset = queryset.filter(participant__name__icontains=search)
+        
+        if prize_id:
+            queryset = queryset.filter(prize_id=prize_id)
+        
+        # Order by selected_at descending
+        queryset = queryset.order_by('-selected_at')
+        
+        # Get raffle event and org info
+        try:
+            raffle_event = RaffleEvent.objects.select_related('event', 'org').get(id=raffle_event_id, org_id=org_id)
+            event = raffle_event.event if hasattr(raffle_event, 'event') else None
+            org = raffle_event.org if hasattr(raffle_event, 'org') else None
+            raffle_name = raffle_event.name
+        except RaffleEvent.DoesNotExist:
+            raffle_event = None
+            event = None
+            org = None
+            raffle_name = ''
+        
+        # Fallback to first winner's raffle event/org if query fails
+        if not raffle_event and queryset.exists():
+            first_winner = queryset.first()
+            if first_winner and first_winner.prize and first_winner.prize.raffle_event:
+                raffle_event = first_winner.prize.raffle_event
+                event = raffle_event.event if hasattr(raffle_event, 'event') else None
+                org = raffle_event.org if hasattr(raffle_event, 'org') else None
+                raffle_name = raffle_event.name
+        
+        # Use raffle_name if it exists, otherwise use event_name (avoid duplication)
+        display_name = raffle_name if raffle_name else (event.name if event else '')
+        
+        # Get prize name if filtering by prize
+        prize_name = ''
+        if prize_id:
+            try:
+                prize = Prize.objects.get(id=prize_id)
+                prize_name = prize.name
+            except Prize.DoesNotExist:
+                pass
+        
+        # Prepare data for template
+        winners_data = []
+        for winner in queryset:
+            winners_data.append({
+                'id': winner.id,
+                'participant_name': winner.participant.name if winner.participant else '',
+                'prize_name': winner.prize.name if winner.prize else '',
+                'department': winner.participant.department.name if winner.participant and winner.participant.department else '',
+            })
+        
+        # Render HTML template
+        html_content = render_to_string('raffle/winners_print.html', {
+            'winners': winners_data,
+            'raffle_name': display_name,  # Use display_name to avoid duplication
+            'event_name': '',  # Don't show event_name separately
+            'org_name': org.name if org else '',
+            'search_query': search,
+            'prize_filter': prize_name,
+            'print_date': datetime.now().strftime('%d/%m/%Y %H:%M:%S'),
+            'total_count': len(winners_data),
+        })
+        
+        # Return HTML response (frontend will handle printing)
+        response = HttpResponse(html_content, content_type='text/html; charset=utf-8')
+        return response
+    
+    @action(detail=False, methods=['get'], url_path='export-excel')
+    def export_winners_excel(self, request):
+        """Export winners to Excel"""
+        org_id = getattr(request, 'org_id', None)
+        if not org_id:
+            return Response(
+                {'error': 'Organization ID not found'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        raffle_event_id = request.query_params.get('raffle_event')
+        if not raffle_event_id:
+            return Response(
+                {'error': 'Raffle Event ID is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get filter parameters
+        search = request.query_params.get('search', '')
+        prize_id = request.query_params.get('prize')
+        
+        # Get queryset (same logic as export_pdf)
+        queryset = RaffleParticipant.objects.select_related(
+            'prize', 'prize__raffle_event', 'participant', 'participant__department'
+        ).filter(prize__raffle_event_id=raffle_event_id, prize__raffle_event__org_id=org_id)
+        
+        if search:
+            queryset = queryset.filter(participant__name__icontains=search)
+        
+        if prize_id:
+            queryset = queryset.filter(prize_id=prize_id)
+        
+        # Order by selected_at descending
+        queryset = queryset.order_by('-selected_at')
+        
+        # Create workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "รายชื่อผู้ได้รับรางวัล"
+        
+        # Set header row
+        headers = ['ID', 'ชื่อผู้ได้รับรางวัล', 'รางวัล', 'หน่วยงาน', 'ลงชื่อ']
+        for col_idx, header in enumerate(headers, start=1):
+            cell = ws.cell(row=1, column=col_idx, value=header)
+            cell.font = Font(bold=True)
+            cell.fill = PatternFill(start_color="E8E8E8", end_color="E8E8E8", fill_type="solid")
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+        
+        # Write data
+        for idx, winner in enumerate(queryset, start=2):
+            ws.cell(row=idx, column=1, value=winner.id)
+            ws.cell(row=idx, column=2, value=winner.participant.name if winner.participant else '')
+            ws.cell(row=idx, column=3, value=winner.prize.name if winner.prize else '')
+            ws.cell(row=idx, column=4, value=winner.participant.department.name if winner.participant and winner.participant.department else '')
+            ws.cell(row=idx, column=5, value='')  # ลงชื่อ - ว่างไว้ให้เซ็น
+        
+        # Auto-adjust column widths
+        column_widths = [10, 35, 25, 20, 15]  # ID, Name, Prize, Department, ลงชื่อ
+        for col_idx, width in enumerate(column_widths, start=1):
+            ws.column_dimensions[ws.cell(row=1, column=col_idx).column_letter].width = width
+        
+        # Create HTTP response
+        response = HttpResponse(
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        
+        # Generate filename
+        filename = f'winners_{raffle_event_id}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx'
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        
+        # Save workbook to response
+        wb.save(response)
+        
+        return response
+    
     @action(detail=False, methods=['get'], url_path='public-list', permission_classes=[])
     def public_list(self, request):
         """List winners with pagination, filtering, and search (public, no auth required)"""
@@ -982,6 +1177,163 @@ def get_or_create_participant(org_id, event_id, name, department_id=None, team_i
         participant.save(update_fields=['metadata'])
     
     return participant, created
+
+
+class RaffleControlViewSet(viewsets.ViewSet):
+    """ViewSet for controlling raffle display via WebSocket"""
+    permission_classes = [IsAuthenticated]
+    
+    @action(detail=False, methods=['post'], url_path='spin')
+    def control_spin(self, request):
+        """Send spin command to display-test page via WebSocket"""
+        raffle_event_id = request.data.get('raffle_event_id')
+        prize_id = request.data.get('prize_id')
+        display_count = request.data.get('display_count', 1)
+        
+        if not raffle_event_id or not prize_id:
+            return Response(
+                {'error': 'raffle_event_id and prize_id are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Broadcast control action via WebSocket
+        from channels.layers import get_channel_layer
+        from asgiref.sync import async_to_sync
+        from datetime import datetime
+        
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            async_to_sync(channel_layer.group_send)(
+                f'raffle_{raffle_event_id}',
+                {
+                    'type': 'control_action',
+                    'action': 'spin',
+                    'data': {
+                        'prize_id': prize_id,
+                        'display_count': display_count
+                    },
+                    'timestamp': datetime.now().isoformat()
+                }
+            )
+        
+        return Response({'success': True, 'message': 'Spin command sent'})
+    
+    @action(detail=False, methods=['post'], url_path='save')
+    def control_save(self, request):
+        """Send save command to display-test page via WebSocket"""
+        raffle_event_id = request.data.get('raffle_event_id')
+        
+        if not raffle_event_id:
+            return Response(
+                {'error': 'raffle_event_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Broadcast control action via WebSocket
+        from channels.layers import get_channel_layer
+        from asgiref.sync import async_to_sync
+        from datetime import datetime
+        
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            async_to_sync(channel_layer.group_send)(
+                f'raffle_{raffle_event_id}',
+                {
+                    'type': 'control_action',
+                    'action': 'save',
+                    'data': {},
+                    'timestamp': datetime.now().isoformat()
+                }
+            )
+        
+        return Response({'success': True, 'message': 'Save command sent'})
+    
+    @action(detail=False, methods=['post'], url_path='select-prize')
+    def control_select_prize(self, request):
+        """Send select prize command to display-test page via WebSocket"""
+        raffle_event_id = request.data.get('raffle_event_id')
+        prize_id = request.data.get('prize_id')
+        
+        if not raffle_event_id or not prize_id:
+            return Response(
+                {'error': 'raffle_event_id and prize_id are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Broadcast control action via WebSocket
+        from channels.layers import get_channel_layer
+        from asgiref.sync import async_to_sync
+        from datetime import datetime
+        
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            async_to_sync(channel_layer.group_send)(
+                f'raffle_{raffle_event_id}',
+                {
+                    'type': 'control_action',
+                    'action': 'select_prize',
+                    'data': {
+                        'prize_id': prize_id
+                    },
+                    'timestamp': datetime.now().isoformat()
+                }
+            )
+        
+        return Response({'success': True, 'message': 'Select prize command sent'})
+    
+    @action(detail=False, methods=['post'], url_path='set-display-count')
+    def control_set_display_count(self, request):
+        """Send set display count command to display-test page via WebSocket"""
+        raffle_event_id = request.data.get('raffle_event_id')
+        display_count = request.data.get('display_count', 1)
+        
+        if not raffle_event_id:
+            return Response(
+                {'error': 'raffle_event_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Broadcast control action via WebSocket
+        from channels.layers import get_channel_layer
+        from asgiref.sync import async_to_sync
+        from datetime import datetime
+        
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            async_to_sync(channel_layer.group_send)(
+                f'raffle_{raffle_event_id}',
+                {
+                    'type': 'control_action',
+                    'action': 'set_display_count',
+                    'data': {
+                        'display_count': display_count
+                    },
+                    'timestamp': datetime.now().isoformat()
+                }
+            )
+        
+        return Response({'success': True, 'message': 'Set display count command sent'})
+    
+    @action(detail=False, methods=['get'], url_path='qr-code')
+    def generate_qr_code(self, request):
+        """Generate QR code URL for mobile controller"""
+        raffle_event_id = request.query_params.get('raffle_event_id')
+        
+        if not raffle_event_id:
+            return Response(
+                {'error': 'raffle_event_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Generate mobile controller URL
+        base_url = request.build_absolute_uri('/').rstrip('/')
+        mobile_url = f"{base_url}/raffle/mobile-controller?raffle_event={raffle_event_id}"
+        
+        return Response({
+            'success': True,
+            'url': mobile_url,
+            'qr_data': mobile_url
+        })
 
 
 class RaffleLogViewSet(viewsets.ReadOnlyModelViewSet):

@@ -1,16 +1,15 @@
 'use client';
 
-import ParticipantsCard from '@/components/participants/ParticipantsCard';
-import SpinningCard from '@/components/raffle/SpinningCard';
-import EmptyCard from '@/components/raffle/EmptyCard';
 import WinnersList from '@/components/raffle/WinnersList';
 import SaveConfirmModal from '@/components/raffle/SaveConfirmModal';
-import { Gift } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import SpinConfirmModal from '@/components/raffle/SpinConfirmModal';
+import RaffleGridDisplay from '@/components/raffle/RaffleGridDisplay';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { raffleApi, Prize } from '@/lib/api/raffle';
 import { useAuth } from '@/lib/hooks/useAuth';
 import { useRole } from '@/lib/hooks/useRole';
+import { useWebSocket } from '@/lib/hooks/useWebSocket';
 
 /**
  * หน้าประกาศรางวัล (Public Page)
@@ -40,13 +39,21 @@ export default function RaffleDisplayPage() {
   const [currentWinners, setCurrentWinners] = useState<any[]>([]);
   const [isSpinning, setIsSpinning] = useState(false);
   const [spinningCards, setSpinningCards] = useState<boolean[]>([]);
+  const [revealedWinners, setRevealedWinners] = useState<any[]>([]); // เก็บ winners ที่จะแสดงผลหลังจาก animation เสร็จ
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
+  const [isSpinModalOpen, setIsSpinModalOpen] = useState(false);
   const [selectedSeed, setSelectedSeed] = useState<string>('');
   const [selectedRuleSnapshot, setSelectedRuleSnapshot] = useState<any>(null);
   const [selectedResult, setSelectedResult] = useState<any>(null);
+  const [selectedWinners, setSelectedWinners] = useState<any[]>([]); // เก็บ winners ที่ได้จาก API ตอน spin
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  
+  // Refs สำหรับเก็บ metadata สำหรับ save
+  const selectedSeedRef = useRef<string>('');
+  const selectedRuleSnapshotRef = useRef<any>(null);
+  const selectedResultRef = useRef<any>(null);
 
   // Check authentication
   useEffect(() => {
@@ -75,12 +82,8 @@ export default function RaffleDisplayPage() {
     }
   }, [searchParams]);
 
-  // Fetch prizes when raffleEventId is available
-  useEffect(() => {
-    if (raffleEventId) {
-      loadPrizes();
-    }
-  }, [raffleEventId]);
+  // State for event ID from raffle event
+  const [eventId, setEventId] = useState<number | undefined>(undefined);
 
   const loadPrizes = async () => {
     if (!raffleEventId) return;
@@ -98,49 +101,340 @@ export default function RaffleDisplayPage() {
     }
   };
 
-  // Update spinning cards when currentWinners changes
+  // Fetch prizes when raffleEventId is available
   useEffect(() => {
-    if (currentWinners.length > 0) {
-      setSpinningCards(Array(currentWinners.length).fill(false));
+    if (raffleEventId) {
+      loadRaffleEvent();
+      loadPrizes();
     }
+  }, [raffleEventId]);
+
+  // Use refs to avoid stale closures in WebSocket handler
+  const prizesRef = useRef(prizes);
+  const selectedPrizeRef = useRef(selectedPrize);
+  const currentWinnersRef = useRef(currentWinners);
+  const revealedWinnersRef = useRef(revealedWinners);
+  const selectedWinnersRef = useRef(selectedWinners);
+  const displayCountRef = useRef(displayCount);
+
+  useEffect(() => {
+    prizesRef.current = prizes;
+  }, [prizes]);
+
+  useEffect(() => {
+    selectedPrizeRef.current = selectedPrize;
+  }, [selectedPrize]);
+
+  useEffect(() => {
+    currentWinnersRef.current = currentWinners;
   }, [currentWinners]);
 
-  // Get available prizes (not completed)
-  const availablePrizes = prizes.filter(p => p.selected_count < p.quantity);
+  useEffect(() => {
+    revealedWinnersRef.current = revealedWinners;
+  }, [revealedWinners]);
 
-  // Calculate grid columns based on displayCount
-  const getGridColumns = (count: number): number => {
-    if (count === 1) return 1; // grid-cols-1 (เต็มจอ)
-    if (count === 2) return 2; // grid-cols-2
-    return 3; // grid-cols-3 for 3+
-  };
+  useEffect(() => {
+    selectedWinnersRef.current = selectedWinners;
+  }, [selectedWinners]);
 
-  const gridColumns = getGridColumns(displayCount);
+  useEffect(() => {
+    displayCountRef.current = displayCount;
+  }, [displayCount]);
 
-  // Calculate text size based on displayCount
-  const getTextSize = (count: number): string => {
-    if (count >= 10 && count <= 12) return 'text-2xl/16';
-    if (count >= 7 && count <= 9) return 'text-3xl/16';
-    return 'text-5xl/16'; // default for 1-6
-  };
+  // Direct spin handler (without modal confirmation) for WebSocket commands
+  const handleSpinDirect = useCallback(async (prizeToUse?: Prize, countToUse?: number) => {
+    const prize = prizeToUse || selectedPrizeRef.current;
+    const count = countToUse !== undefined ? countToUse : displayCountRef.current;
 
-  const textSize = getTextSize(displayCount);
-
-  // Calculate empty cards count
-  const totalCards = currentWinners.length;
-  const totalSlots = Math.ceil(totalCards / gridColumns) * gridColumns;
-  const emptyCardsCount = totalSlots - totalCards;
-
-  const handleSpin = async () => {
-    if (!selectedPrize) {
+    if (!prize) {
+      console.error('No prize selected for spin');
       setError('กรุณาเลือกรางวัลก่อน');
       return;
     }
+
+    console.log('handleSpinDirect called with prize:', prize.id, 'count:', count);
 
     try {
       setLoading(true);
       setError(null);
       setIsSpinning(true);
+
+      // Use displayCount as quantity (limit to available prizes)
+      const availableQuantity = prize.quantity - prize.selected_count;
+      const quantity = Math.min(count, availableQuantity);
+
+      console.log('Calling selectWinners API with prize:', prize.id, 'quantity:', quantity);
+
+      // Call API to select winners (does not save)
+      const result = await raffleApi.selectWinners(prize.id, quantity);
+      
+      if (result.success && result.winners) {
+        console.log('Select winners success, winners count:', result.winners.length);
+        // คำนวณเวลาหมุนตามจำนวนรายการที่แสดงผล (ปรับช้าลง 50%)
+        // ถ้า displayCount = 1 → 5 วินาที (5000ms), ถ้ามากกว่า 1 → 3 วินาที (3000ms จาก 2000ms)
+        const spinDuration = count === 1 ? 5000 : 3000;
+        
+        // Store metadata for saving later (แต่ยังไม่แสดงผลลัพธ์)
+        const seed = result.seed || '';
+        const ruleSnapshot = result.rule_snapshot || {};
+        const resultData = result.result || {};
+        setSelectedSeed(seed);
+        setSelectedRuleSnapshot(ruleSnapshot);
+        setSelectedResult(resultData);
+        selectedSeedRef.current = seed;
+        selectedRuleSnapshotRef.current = ruleSnapshot;
+        selectedResultRef.current = resultData;
+        setSelectedWinners(result.winners || []); // เก็บ winners ที่ได้จาก API
+        
+        // อย่าแสดงผลลัพธ์ทันที - สร้าง placeholder winners สำหรับแสดง card (แต่ยังไม่แสดงชื่อจริง)
+        const placeholderWinners = result.winners.map(() => ({ name: undefined }));
+        setCurrentWinners(placeholderWinners); // ใช้ placeholder เพื่อแสดง card
+        setRevealedWinners([]); // ล้าง revealed winners
+        
+        // Staggered animation - แต่ละ card เริ่มหมุนทีละตัว (delay 100ms ต่อ card)
+        const staggerDelay = 100; // ระยะห่างระหว่างแต่ละ card (ms)
+        
+        // เริ่ม spinning animation แบบ staggered
+        Array.from({ length: result.winners.length }, (_, index) => {
+          setTimeout(() => {
+            setSpinningCards(prev => {
+              const newState = [...prev];
+              newState[index] = true;
+              return newState;
+            });
+          }, index * staggerDelay);
+        });
+        
+        // Stop spinning after calculated duration for each card (รวม delay)
+        Array.from({ length: result.winners.length }, (_, index) => {
+          const cardStartDelay = index * staggerDelay;
+          setTimeout(() => {
+            setSpinningCards(prev => {
+              const newState = [...prev];
+              newState[index] = false;
+              return newState;
+            });
+          }, cardStartDelay + spinDuration);
+        });
+
+        // เปิดเผยผลลัพธ์หลังจาก animation เสร็จทั้งหมด
+        const lastCardDelay = (result.winners.length - 1) * staggerDelay;
+        setTimeout(() => {
+          // แสดงผลลัพธ์หลังจาก animation เสร็จ
+          setCurrentWinners(result.winners);
+          setRevealedWinners(result.winners);
+          // อย่า reset isSpinning ที่นี่ - ให้ disable ปุ่ม Spin จนกว่าจะบันทึก
+          // setIsSpinning(false); จะ reset เมื่อบันทึกเสร็จใน handleSaveConfirm
+        }, lastCardDelay + spinDuration + 500);
+      } else {
+        setError(result.error || 'Failed to select winners');
+        setIsSpinning(false);
+      }
+    } catch (err: any) {
+      console.error('Error selecting winners:', err);
+      setError(err.response?.data?.error || 'Failed to select winners');
+      setIsSpinning(false);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Store handleSpinDirect in ref for WebSocket handler
+  const handleSpinDirectRef = useRef(handleSpinDirect);
+  useEffect(() => {
+    handleSpinDirectRef.current = handleSpinDirect;
+  }, [handleSpinDirect]);
+
+  // Store handleSaveConfirm in ref for WebSocket handler (will be set after handleSaveConfirm is defined)
+  const handleSaveConfirmRef = useRef<(() => Promise<void>) | undefined>(undefined);
+
+  // WebSocket connection for receiving control actions
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+  const wsUrl = raffleEventId 
+    ? `${API_URL.replace('/api', '')}/ws/raffle/${raffleEventId}/`
+    : '';
+
+  const { isConnected, lastMessage } = useWebSocket({
+    url: wsUrl,
+    onOpen: () => {
+      console.log('✅ WebSocket connected to:', wsUrl);
+    },
+    onClose: () => {
+      console.log('❌ WebSocket disconnected');
+    },
+    onError: (error) => {
+      console.error('❌ WebSocket error:', error);
+    },
+    onMessage: (message) => {
+      console.log('WebSocket message received:', message);
+      if (message.type === 'control_action') {
+        const { action, data } = message;
+        
+        switch (action) {
+          case 'spin':
+            if (data.prize_id && data.display_count) {
+              console.log('Received spin command:', data);
+              // Find and select prize
+              const prize = prizesRef.current.find(p => p.id === data.prize_id);
+              if (prize) {
+                console.log('Found prize:', prize);
+                setSelectedPrize(prize);
+                setDisplayCount(data.display_count);
+                // Trigger spin directly without modal confirmation
+                // Use longer timeout to ensure state is updated
+                setTimeout(() => {
+                  console.log('Triggering handleSpinDirect with prize:', prize.id, 'count:', data.display_count);
+                  handleSpinDirectRef.current(prize, data.display_count);
+                }, 500);
+              } else {
+                console.error('Prize not found:', data.prize_id, 'Available prizes:', prizesRef.current);
+                // Try to reload prizes and retry
+                if (raffleEventId) {
+                  loadPrizes().then(() => {
+                    setTimeout(() => {
+                      const retryPrize = prizesRef.current.find(p => p.id === data.prize_id);
+                      if (retryPrize) {
+                        setSelectedPrize(retryPrize);
+                        setDisplayCount(data.display_count);
+                        setTimeout(() => {
+                          handleSpinDirectRef.current(retryPrize, data.display_count);
+                        }, 500);
+                      }
+                    }, 1000);
+                  });
+                }
+              }
+            }
+            break;
+          
+          case 'save':
+            // ตรวจสอบว่ามี winners ที่จะบันทึกได้หรือไม่ (revealedWinners หรือ selectedWinners)
+            const hasRevealedWinners = revealedWinnersRef.current.length > 0;
+            const hasSelectedWinners = selectedWinnersRef.current.length > 0;
+            const hasCurrentWinners = currentWinnersRef.current.length > 0;
+            
+            console.log('Received save command', {
+              hasRevealedWinners,
+              hasSelectedWinners,
+              hasCurrentWinners,
+              revealedWinners: revealedWinnersRef.current,
+              selectedWinners: selectedWinnersRef.current,
+              currentWinners: currentWinnersRef.current,
+            });
+            
+            if (hasRevealedWinners || hasSelectedWinners || hasCurrentWinners) {
+              console.log('Calling handleSaveConfirm from WebSocket');
+              // เรียก handleSaveConfirm โดยตรง (ไม่ผ่าน modal) เมื่อเป็น WebSocket command
+              // ใช้ setTimeout เพื่อให้แน่ใจว่า state ได้ update แล้ว
+              setTimeout(() => {
+                if (handleSaveConfirmRef.current) {
+                  console.log('Executing handleSaveConfirm from WebSocket');
+                  handleSaveConfirmRef.current().catch(err => {
+                    console.error('Error executing handleSaveConfirm:', err);
+                  });
+                } else {
+                  console.error('handleSaveConfirmRef.current is undefined');
+                }
+              }, 100);
+            } else {
+              console.warn('No winners to save', {
+                hasRevealedWinners,
+                hasSelectedWinners,
+                hasCurrentWinners,
+                revealedWinners: revealedWinnersRef.current,
+                selectedWinners: selectedWinnersRef.current,
+                currentWinners: currentWinnersRef.current,
+              });
+            }
+            break;
+          
+          case 'select_prize':
+            if (data.prize_id) {
+              console.log('Received select_prize command:', data.prize_id);
+              const prize = prizesRef.current.find(p => p.id === data.prize_id);
+              if (prize) {
+                handlePrizeChange(prize.id.toString());
+              }
+            }
+            break;
+          
+          case 'set_display_count':
+            if (data.display_count) {
+              console.log('Received set_display_count command:', data.display_count);
+              handleDisplayCountChange(data.display_count.toString());
+            }
+            break;
+        }
+      }
+    },
+  });
+
+  const loadRaffleEvent = async () => {
+    if (!raffleEventId) return;
+    
+    try {
+      const raffleEvent = await raffleApi.getEvent(raffleEventId);
+      // RaffleEvent has 'event' field which is the event ID (number)
+      if (raffleEvent.event) {
+        setEventId(raffleEvent.event);
+      }
+    } catch (err: any) {
+      console.error('Error loading raffle event:', err);
+    }
+  };
+
+  // Update spinning cards when currentWinners changes - only reset if not currently spinning
+  useEffect(() => {
+    if (currentWinners.length > 0 && !isSpinning) {
+      // Reset spinning cards only when not spinning and winners changed
+      setSpinningCards(prev => {
+        // ถ้า length เปลี่ยนให้ reset
+        if (prev.length !== currentWinners.length) {
+          return Array(currentWinners.length).fill(false);
+        }
+        return prev;
+      });
+    } else if (currentWinners.length === 0) {
+      // Reset เมื่อไม่มี winners
+      setSpinningCards([]);
+    }
+  }, [currentWinners.length, isSpinning]);
+
+  // Get available prizes (not completed)
+  const availablePrizes = prizes.filter(p => p.selected_count < p.quantity);
+
+  // Grid layout configuration - แยก config เพื่อแก้ไขง่าย
+  // ปรับ padding และ font size ให้พอดีกับจอเดียว
+
+  const handleSpinClick = () => {
+    if (!selectedPrize) {
+      setError('กรุณาเลือกรางวัลก่อน');
+      return;
+    }
+    // ตรวจสอบว่ามี winners ที่ยังไม่ได้บันทึกหรือไม่
+    const hasUnsavedWinners = revealedWinners.length > 0 || 
+                               (currentWinners.length > 0 && currentWinners.some(w => w && w.id));
+    if (hasUnsavedWinners) {
+      setError('กรุณาบันทึกรางวัลก่อนทำการจับสลากครั้งใหม่');
+      return;
+    }
+    setIsSpinModalOpen(true);
+  };
+
+  const handleSpin = async () => {
+    if (!selectedPrize) {
+      setError('กรุณาเลือกรางวัลก่อน');
+      setIsSpinModalOpen(false);
+      return;
+    }
+
+    setIsSpinModalOpen(false);
+    // Set isSpinning = true หลังจาก confirm แล้ว
+    setIsSpinning(true);
+
+    try {
+      setLoading(true);
+      setError(null);
 
       // Use displayCount as quantity (limit to available prizes)
       const availableQuantity = selectedPrize.quantity - selectedPrize.selected_count;
@@ -150,31 +444,62 @@ export default function RaffleDisplayPage() {
       const result = await raffleApi.selectWinners(selectedPrize.id, quantity);
       
       if (result.success && result.winners) {
-        // Store winners and metadata for saving later
-        setCurrentWinners(result.winners);
-        setSelectedSeed(result.seed || '');
-        setSelectedRuleSnapshot(result.rule_snapshot || {});
-        setSelectedResult(result.result || {});
+        // คำนวณเวลาหมุนตามจำนวนรายการที่แสดงผล (ปรับช้าลง 50%)
+        // ถ้า displayCount = 1 → 5 วินาที (5000ms), ถ้ามากกว่า 1 → 3 วินาที (3000ms จาก 2000ms)
+        const spinDuration = displayCount === 1 ? 5000 : 3000;
         
-        // Start spinning animation
-        setSpinningCards(Array(result.winners.length).fill(true));
+        // Store metadata for saving later (แต่ยังไม่แสดงผลลัพธ์)
+        const seed = result.seed || '';
+        const ruleSnapshot = result.rule_snapshot || {};
+        const resultData = result.result || {};
+        setSelectedSeed(seed);
+        setSelectedRuleSnapshot(ruleSnapshot);
+        setSelectedResult(resultData);
+        selectedSeedRef.current = seed;
+        selectedRuleSnapshotRef.current = ruleSnapshot;
+        selectedResultRef.current = resultData;
+        setSelectedWinners(result.winners || []); // เก็บ winners ที่ได้จาก API
         
-        // Stop spinning after 2-3 seconds (random duration for each card)
+        // อย่าแสดงผลลัพธ์ทันที - สร้าง placeholder winners สำหรับแสดง card (แต่ยังไม่แสดงชื่อจริง)
+        const placeholderWinners = result.winners.map(() => ({ name: undefined }));
+        setCurrentWinners(placeholderWinners); // ใช้ placeholder เพื่อแสดง card
+        setRevealedWinners([]); // ล้าง revealed winners
+        
+        // Staggered animation - แต่ละ card เริ่มหมุนทีละตัว (delay 100ms ต่อ card)
+        const staggerDelay = 100; // ระยะห่างระหว่างแต่ละ card (ms)
+        
+        // เริ่ม spinning animation แบบ staggered
         Array.from({ length: result.winners.length }, (_, index) => {
-          const duration = 2000 + Math.random() * 1000; // 2-3 seconds
+          setTimeout(() => {
+            setSpinningCards(prev => {
+              const newState = [...prev];
+              newState[index] = true;
+              return newState;
+            });
+          }, index * staggerDelay);
+        });
+        
+        // Stop spinning after calculated duration for each card (รวม delay)
+        Array.from({ length: result.winners.length }, (_, index) => {
+          const cardStartDelay = index * staggerDelay;
           setTimeout(() => {
             setSpinningCards(prev => {
               const newState = [...prev];
               newState[index] = false;
               return newState;
             });
-          }, duration);
+          }, cardStartDelay + spinDuration);
         });
 
-        // Reset isSpinning after all cards stop
+        // เปิดเผยผลลัพธ์หลังจาก animation เสร็จทั้งหมด
+        const lastCardDelay = (result.winners.length - 1) * staggerDelay;
         setTimeout(() => {
-          setIsSpinning(false);
-        }, 3500);
+          // แสดงผลลัพธ์หลังจาก animation เสร็จ
+          setCurrentWinners(result.winners);
+          setRevealedWinners(result.winners);
+          // อย่า reset isSpinning ที่นี่ - ให้ disable ปุ่ม Spin จนกว่าจะบันทึก
+          // setIsSpinning(false); จะ reset เมื่อบันทึกเสร็จใน handleSaveConfirm
+        }, lastCardDelay + spinDuration + 500);
       } else {
         setError(result.error || 'Failed to select winners');
         setIsSpinning(false);
@@ -189,22 +514,85 @@ export default function RaffleDisplayPage() {
   };
 
   const handleSaveClick = () => {
-    if (!currentWinners || currentWinners.length === 0) {
+    // ใช้ revealedWinners หรือ selectedWinners (เก็บไว้ตอน spin) หรือ currentWinners ที่มี id property
+    let winnersToSave: any[] = [];
+    
+    console.log('handleSaveClick - revealedWinners:', revealedWinners);
+    console.log('handleSaveClick - selectedWinners:', selectedWinners);
+    console.log('handleSaveClick - currentWinners:', currentWinners);
+    
+    if (revealedWinners.length > 0) {
+      // ถ้ามี revealedWinners ใช้เลย (animation เสร็จแล้ว)
+      winnersToSave = revealedWinners;
+    } else if (selectedWinners.length > 0) {
+      // ถ้ายังไม่มี revealedWinners แต่มี selectedWinners ใช้แทน (เก็บไว้ตอน spin)
+      winnersToSave = selectedWinners;
+    } else {
+      // ตรวจสอบว่า currentWinners มี id property หรือไม่ (ไม่ใช่ placeholder)
+      const validCurrentWinners = currentWinners.filter(w => w && w.id !== undefined);
+      if (validCurrentWinners.length > 0) {
+        winnersToSave = validCurrentWinners;
+      } else {
+        winnersToSave = currentWinners;
+      }
+    }
+    
+    console.log('handleSaveClick - winnersToSave:', winnersToSave);
+    
+    if (!winnersToSave || winnersToSave.length === 0) {
       setError('ไม่มีผู้ชนะที่จะบันทึก');
       return;
     }
+    
+    // ตรวจสอบว่า winners มี id property หรือไม่ (ใช้ id แทน name เพราะ API ใช้ id)
+    const hasValidIds = winnersToSave.every(w => w && w.id);
+    console.log('handleSaveClick - hasValidIds:', hasValidIds);
+    if (!hasValidIds) {
+      setError('ยังไม่สามารถบันทึกได้ กรุณารอให้การหมุนเสร็จสิ้นก่อน');
+      return;
+    }
+    
     setIsSaveModalOpen(true);
   };
 
-  const handleSaveConfirm = async () => {
-    if (!selectedPrize || !currentWinners || currentWinners.length === 0) {
+  const handleSaveConfirm = useCallback(async () => {
+    // ใช้ revealedWinners หรือ selectedWinners (เก็บไว้ตอน spin) หรือ currentWinners ที่มี id property
+    // ใช้ ref เพื่อให้ WebSocket handler ได้ข้อมูลล่าสุด
+    let winnersToSave: any[] = [];
+    
+    if (revealedWinnersRef.current.length > 0) {
+      // ถ้ามี revealedWinners ใช้เลย (animation เสร็จแล้ว)
+      winnersToSave = revealedWinnersRef.current;
+    } else if (selectedWinnersRef.current.length > 0) {
+      // ถ้ายังไม่มี revealedWinners แต่มี selectedWinners ใช้แทน (เก็บไว้ตอน spin)
+      winnersToSave = selectedWinnersRef.current;
+    } else {
+      // ตรวจสอบว่า currentWinners มี id property หรือไม่ (ไม่ใช่ placeholder)
+      const validCurrentWinners = currentWinnersRef.current.filter(w => w && w.id !== undefined);
+      if (validCurrentWinners.length > 0) {
+        winnersToSave = validCurrentWinners;
+      } else {
+        winnersToSave = currentWinnersRef.current;
+      }
+    }
+    
+    const prize = selectedPrizeRef.current;
+    if (!prize || !winnersToSave || winnersToSave.length === 0) {
       setError('ไม่มีผู้ชนะที่จะบันทึก');
+      setIsSaveModalOpen(false);
+      return;
+    }
+    
+    // ตรวจสอบว่า winners มี id property หรือไม่ (ใช้ id แทน name เพราะ API ใช้ id)
+    const hasValidIds = winnersToSave.every(w => w && w.id);
+    if (!hasValidIds) {
+      setError('ยังไม่สามารถบันทึกได้ กรุณารอให้การหมุนเสร็จสิ้นก่อน');
       setIsSaveModalOpen(false);
       return;
     }
 
     if (!canSpinRaffle()) {
-      setError('คุณไม่มีสิทธิ์์ในการบันทึกผลการจับสลาก');
+      setError('คุณได้รางวัลแล้วในการบันทึกผลการจับสลาก');
       setIsSaveModalOpen(false);
       return;
     }
@@ -214,24 +602,24 @@ export default function RaffleDisplayPage() {
       setError(null);
       
       // Extract participant IDs from winners
-      const participantIds = currentWinners.map(w => w.id);
+      const participantIds = winnersToSave.map(w => w.id);
       
-      // Call API to save winners
+      // Call API to save winners (ใช้ ref เพื่อให้ได้ข้อมูลล่าสุด)
       await raffleApi.saveWinners(
-        selectedPrize.id,
+        prize.id,
         participantIds,
-        selectedSeed,
-        selectedRuleSnapshot,
-        selectedResult
+        selectedSeedRef.current,
+        selectedRuleSnapshotRef.current,
+        selectedResultRef.current
       );
       
       // Refresh prize data to update dropdown
       await loadPrizes();
       
       // Refresh selectedPrize with fresh data from API (without full page refresh)
-      if (selectedPrize) {
+      if (prize) {
         try {
-          const freshPrize = await raffleApi.getPrizePublic(selectedPrize.id);
+          const freshPrize = await raffleApi.getPrizePublic(prize.id);
           setSelectedPrize(freshPrize);
           
           // Check if prize is completed
@@ -241,7 +629,7 @@ export default function RaffleDisplayPage() {
           }
         } catch (err) {
           // If getPrizePublic fails, fallback to finding in prizes list
-          const updatedPrize = prizes.find(p => p.id === selectedPrize.id);
+          const updatedPrize = prizesRef.current.find(p => p.id === prize.id);
           if (updatedPrize) {
             setSelectedPrize(updatedPrize);
             if (updatedPrize.selected_count >= updatedPrize.quantity) {
@@ -253,20 +641,36 @@ export default function RaffleDisplayPage() {
       
       // Clear current winners and metadata
       setCurrentWinners([]);
+      setRevealedWinners([]);
+      setSelectedWinners([]);
       setSelectedSeed('');
       setSelectedRuleSnapshot(null);
       setSelectedResult(null);
+      selectedSeedRef.current = '';
+      selectedRuleSnapshotRef.current = null;
+      selectedResultRef.current = null;
       setIsSaveModalOpen(false);
+      
+      // เคลียค่าทั้งหมดหลังบันทึก
+      setDisplayCount(1);
+      setSpinningCards([]);
+      setIsSpinning(false);
       
       // Trigger WinnersList refresh
       setRefreshTrigger(prev => prev + 1);
     } catch (err: any) {
-      console.error('Error saving:', err);
-      setError(err.response?.data?.error || 'Failed to save');
+      console.error('Error saving winners:', err);
+      setError(err.response?.data?.error || 'Failed to save winners');
     } finally {
       setLoading(false);
     }
-  };
+  }, [canSpinRaffle, loadPrizes]);
+
+  // Store handleSaveConfirm in ref for WebSocket handler
+  useEffect(() => {
+    handleSaveConfirmRef.current = handleSaveConfirm;
+    console.log('handleSaveConfirmRef has been set');
+  }, [handleSaveConfirm]);
 
   const handlePrizeChange = (prizeId: string) => {
     if (!prizeId) {
@@ -284,7 +688,7 @@ export default function RaffleDisplayPage() {
 
   const handleDisplayCountChange = (value: string) => {
     const count = parseInt(value, 10);
-    if (!isNaN(count) && count > 0) {
+    if (!isNaN(count) && count >= 0 && count <= 30) {
       setDisplayCount(count);
       // Clear current winners when changing display count
       setCurrentWinners([]);
@@ -310,123 +714,44 @@ export default function RaffleDisplayPage() {
 
   return (
     // <div className="min-h-screen bg-gradient-to-br from-zinc-900 from-10% via-zinc-900/90 via-50% to-zinc-900 to-90% text-white">
-    <div className="min-h-screen bg-linear-to-r/hsl from-emerald-700 to-sky-900 text-white">
-      <div className="mx-auto grid grid-cols-4 h-screen">
+    <div className="min-h-screen bg-linear-to-r/hsl from-emerald-700 to-sky-900 text-white overflow-hidden">
+      {/* WebSocket Connection Status Indicator */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="fixed top-2 right-2 z-50">
+          <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+        </div>
+      )}
+      <div className="mx-auto grid grid-cols-4 h-screen max-h-screen">
 
-        <div className='flex flex-col col-span-3 py-8 px-4 justify-between'>
-          <div className='flex flex-col h-full mb-4'>
-            {/* Header Test */}
-            <div className=' mb-4 grid gap-1'>
-              <div className='flex items-center'>
-                <img
-                  src="/images/Logonrh.png"
-                  alt="โรงพยาบาลนางรอง Logo"
-                  className="h-16 mr-4"
-                />
-                <div>
-                  <h1 className="text-xl">
-                    โรงพยาบาลนางรอง
-                  </h1>
-                  <h3 className='text-xs'>
-                    งานมอบแผนและนโยบาย ปี 2569 & จับสลากปีใหม่ 2568
-                  </h3>
-                </div>
-              </div>
-              <div className='grid grid-cols-2 bg-white text-zinc-800 text-4xl font-bold text-center p-2 rounded-lg shadow-xl  items-center'>
-                <div className='p-4 bg-emerald-200/50 border-l-2 border-y-2 border-emerald-600 rounded-l-lg'>
-                  {selectedPrize?.name || 'รางวัล'}
-                </div>
-                {/* <div className='p-4 border-y-2 border-emerald-600'>
-                  {selectedPrize?.rules?.value ? `มูลค่า ${selectedPrize.rules.value} บาท` : 'มูลค่า -'}
-                </div> */}
-                <div className='p-4 border-r-2 border-y-2 border-emerald-600 rounded-r-lg'>
-                  {selectedPrize 
-                    ? `เหลือ ${selectedPrize.quantity - selectedPrize.selected_count} รางวัล`
-                    : 'จำนวน - รางวัล'}
-                </div>
-              </div>
-            </div>
-            <div className={`grid gap-4 text-center text-2xl h-full ${
-              displayCount === 1 
-                ? 'grid-cols-1' 
-                : displayCount === 2 
-                ? 'grid-cols-2' 
-                : 'grid-cols-3'
-            }`}>
-              {error && (
-                <div className={`bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded text-sm ${
-                  displayCount === 1 ? 'col-span-1' : displayCount === 2 ? 'col-span-2' : 'col-span-3'
-                }`}>
-                  {error}
-                </div>
-              )}
-              
-              {loading && currentWinners.length === 0 && (
-                <div className={`flex items-center justify-center h-64 ${
-                  displayCount === 1 ? 'col-span-1' : displayCount === 2 ? 'col-span-2' : 'col-span-3'
-                }`}>
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
-                </div>
-              )}
-              
-              {/* Render SpinningCard ทั้งหมด */}
-              {currentWinners.length > 0 && currentWinners.map((winner, idx) => (
-                <SpinningCard
-                  key={idx}
-                  finalValue={winner.name || 'Unknown'}
-                  isSpinning={spinningCards[idx] || false}
-                  spinDuration={2000 + Math.random() * 1000}
-                  textSize={textSize}
-                />
-              ))}
-
-              {/* Render EmptyCard เพื่อเติมช่องว่างให้เต็ม grid */}
-              {currentWinners.length > 0 && Array.from({ length: emptyCardsCount }, (_, idx) => (
-                <EmptyCard
-                  key={`empty-${idx}`}
-                  text="EMPTY"
-                  borderColor="border-gray-200/20"
-                  className=""
-                />
-              ))}
-
-              {/* Show empty cards when displayCount is selected but no winners yet */}
-              {!loading && currentWinners.length === 0 && !error && displayCount > 0 && (
-                Array.from({ length: displayCount }, (_, idx) => (
-                  <EmptyCard
-                    key={`empty-placeholder-${idx}`}
-                    text="EMPTY"
-                    borderColor="border-gray-200/20"
-                    className=""
-                  />
-                ))
-              )}
-              
-              {!loading && currentWinners.length === 0 && !error && displayCount <= 0 && (
-                <div className={`flex items-center justify-center h-64 text-zinc-400 ${
-                  displayCount === 1 ? 'col-span-1' : displayCount === 2 ? 'col-span-2' : 'col-span-3'
-                }`}>
-                  <img
-                    src="/images/Logonrh.png"
-                    alt="NR Sport Logo"
-                    className="w-[400px] opacity-10 mt-40 pointer-events-none select-none"
-                    style={{ zIndex: 0 }}
-                  />
-                </div>
-              )}
-            </div>
+        <div className='flex flex-col col-span-3 py-2 px-3 justify-between overflow-hidden' style={{ marginBottom: '40px' }}>
+          <div className='flex flex-col flex-1 min-h-0'>
+            {/* Grid Display Component */}
+            <RaffleGridDisplay
+              displayCount={displayCount}
+              winners={currentWinners}
+              revealedWinners={revealedWinners}
+              spinningCards={spinningCards}
+              error={error}
+              loading={loading}
+              eventId={eventId}
+            />
 
 
 
           </div>
-          <div className='bg-white grid grid-cols-3 gap-2 items-center text-zinc-800 p-2 rounded-xl'>
+          <div className='bg-white grid grid-cols-3 gap-2 items-center text-zinc-800 p-1.5 rounded-xl shrink-0 relative z-50'>
             <div className='col-span-2 flex gap-2 items-center'>
               <div className="w-full grid grid-cols-3 gap-2">
                 <select 
                   value={selectedPrize?.id.toString() || ''}
                   onChange={(e) => handlePrizeChange(e.target.value)}
-                  className="w-full col-span-2 px-4 py-1  border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500 text-zinc-800"
-                  disabled={loading || availablePrizes.length === 0}
+                  className="w-full col-span-2 px-4 py-1  border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500 text-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={
+                    loading || 
+                    availablePrizes.length === 0 || 
+                    isSpinning || 
+                    (revealedWinners.length > 0 || (currentWinners.length > 0 && currentWinners.some(w => w && w.id)))
+                  }
                 >
                   <option value="">-- เลือกประเภทรางวัล --</option>
                   {availablePrizes.map((prize) => (
@@ -435,34 +760,51 @@ export default function RaffleDisplayPage() {
                     </option>
                   ))}
                 </select>
-                <select 
-                  value={displayCount.toString()}
-                  onChange={(e) => handleDisplayCountChange(e.target.value)}
-                  className="w-full px-4 py-1  border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500 text-zinc-800"
-                  disabled={!selectedPrize}
+                <select
+                  value={displayCount}
+                  onChange={(e) => {
+                    const numValue = parseInt(e.target.value, 10);
+                    if (!isNaN(numValue)) {
+                      handleDisplayCountChange(numValue.toString());
+                    }
+                  }}
+                  className="w-full px-4 py-1 border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500 text-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={
+                    !selectedPrize || 
+                    isSpinning || 
+                    (revealedWinners.length > 0 || (currentWinners.length > 0 && currentWinners.some(w => w && w.id)))
+                  }
                 >
-                  <option value="0">-- แสดงผล --</option>
                   <option value="1">1</option>
                   <option value="2">2</option>
                   <option value="3">3</option>
-                  <option value="4">4</option>
-                  <option value="5">5</option>
                   <option value="6">6</option>
-                  <option value="7">7</option>
-                  <option value="8">8</option>
-                  <option value="9">9</option>
                   <option value="10">10</option>
-                  <option value="11">11</option>
-                  <option value="12">12</option>
+                  <option value="20">20</option>
+                  <option value="30">30</option>
                 </select>
               </div>
             </div>
             <div className='grid grid-cols-3 gap-2  h-full '>
               <button
-                onClick={handleSpin}
-                disabled={isSpinning || !selectedPrize || loading || !canSpinRaffle()}
+                onClick={handleSpinClick}
+                disabled={
+                  isSpinning || 
+                  !selectedPrize || 
+                  loading || 
+                  !canSpinRaffle() ||
+                  (revealedWinners.length > 0 || (currentWinners.length > 0 && currentWinners.some(w => w && w.id)))
+                }
                 className='bg-amber-300 hover:bg-amber-400 border-amber-400 border-2 rounded-lg col-span-2 disabled:opacity-50 disabled:cursor-not-allowed'
-                title={!canSpinRaffle() ? 'คุณไม่มีสิทธิ์์ในการจับสลาก' : ''}
+                title={
+                  !canSpinRaffle() 
+                    ? 'คุณได้รางวัลแล้วในการจับสลาก' 
+                    : isSpinning 
+                    ? 'กำลังหมุน...' 
+                    : (revealedWinners.length > 0 || (currentWinners.length > 0 && currentWinners.some(w => w && w.id)))
+                    ? 'กรุณาบันทึกรางวัลก่อนทำการจับสลากครั้งใหม่'
+                    : ''
+                }
               >
                 {isSpinning ? 'กำลังหมุน...' : 'Spin'}
               </button>
@@ -478,7 +820,7 @@ export default function RaffleDisplayPage() {
         </div>
 
         {/* Right Component */}
-        <WinnersList raffleEventId={raffleEventId} refreshTrigger={refreshTrigger} />
+        <WinnersList raffleEventId={raffleEventId} refreshTrigger={refreshTrigger} selectedPrize={selectedPrize} />
       </div>
 
       {/* Save Confirm Modal */}
@@ -489,6 +831,19 @@ export default function RaffleDisplayPage() {
         winnerCount={currentWinners.length}
         prizeName={selectedPrize?.name}
         loading={loading}
+      />
+
+      {/* Spin Confirm Modal */}
+      <SpinConfirmModal
+        isOpen={isSpinModalOpen}
+        onClose={() => {
+          setIsSpinModalOpen(false);
+          setIsSpinning(false); // Reset isSpinning เมื่อปิด modal โดยไม่ confirm
+        }}
+        onConfirm={handleSpin}
+        prizeName={selectedPrize?.name}
+        displayCount={displayCount}
+        loading={loading || isSpinning}
       />
     </div>
   );

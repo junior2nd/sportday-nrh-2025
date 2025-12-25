@@ -21,7 +21,7 @@ class Migration(migrations.Migration):
                 ('metadata', models.JSONField(blank=True, default=dict, verbose_name='ข้อมูลเพิ่มเติม')),
                 ('created_at', models.DateTimeField(auto_now_add=True)),
                 ('updated_at', models.DateTimeField(auto_now=True)),
-                ('department', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='participants', to='core.department', verbose_name='แผนก')),
+                ('department', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='participants', to='core.department', verbose_name='หน่วยงาน')),
                 ('event', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='participants', to='core.event', verbose_name='กิจกรรม')),
                 ('org', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='participants', to='core.organization', verbose_name='หน่วยงาน')),
             ],

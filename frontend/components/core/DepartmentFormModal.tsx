@@ -50,7 +50,7 @@ export default function DepartmentFormModal({
 
     // Validation
     if (!formData.name.trim()) {
-      setError('กรุณากรอกชื่อแผนก');
+      setError('กรุณากรอกชื่อหน่วยงาน');
       return;
     }
     
@@ -58,7 +58,7 @@ export default function DepartmentFormModal({
     if (formData.code.trim()) {
       const codeRegex = /^[a-zA-Z0-9_-]+$/;
       if (!codeRegex.test(formData.code.trim())) {
-        setError('รหัสแผนกต้องเป็นตัวอักษร ตัวเลข หรือเครื่องหมาย - และ _ เท่านั้น');
+        setError('รหัสหน่วยงานต้องเป็นตัวอักษร ตัวเลข หรือเครื่องหมาย - และ _ เท่านั้น');
         return;
       }
     }
@@ -117,10 +117,10 @@ export default function DepartmentFormModal({
         // Check for field-specific errors first
         const fieldErrors: string[] = [];
         if (errorData.code && Array.isArray(errorData.code)) {
-          fieldErrors.push(`รหัสแผนก: ${errorData.code[0]}`);
+          fieldErrors.push(`รหัสหน่วยงาน: ${errorData.code[0]}`);
         }
         if (errorData.name && Array.isArray(errorData.name)) {
-          fieldErrors.push(`ชื่อแผนก: ${errorData.name[0]}`);
+          fieldErrors.push(`ชื่อหน่วยงาน: ${errorData.name[0]}`);
         }
         if (errorData.org && Array.isArray(errorData.org)) {
           fieldErrors.push(`หน่วยงาน: ${errorData.org[0]}`);
@@ -163,7 +163,7 @@ export default function DepartmentFormModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={department ? 'แก้ไขแผนก' : 'เพิ่มแผนกใหม่'}
+      title={department ? 'แก้ไขหน่วยงาน' : 'เพิ่มหน่วยงานใหม่'}
       footer={
         <div className="flex justify-end space-x-3">
           <button
@@ -193,7 +193,7 @@ export default function DepartmentFormModal({
 
         <div>
           <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
-            ชื่อแผนก <span className="text-red-500">*</span>
+            ชื่อหน่วยงาน <span className="text-red-500">*</span>
           </label>
           <input
             type="text"
@@ -202,13 +202,13 @@ export default function DepartmentFormModal({
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-sm shadow-sm focus:outline-none focus:ring-emerald-500 focus:border-emerald-500"
-            placeholder="กรอกชื่อแผนก"
+            placeholder="กรอกชื่อหน่วยงาน"
           />
         </div>
 
         <div>
           <label htmlFor="code" className="block text-sm font-medium text-gray-700 mb-1">
-            รหัสแผนก
+            รหัสหน่วยงาน
           </label>
           <input
             type="text"
@@ -219,7 +219,7 @@ export default function DepartmentFormModal({
             placeholder="เช่น IT, HR, FINANCE (ไม่บังคับ)"
           />
           <p className="mt-1 text-xs text-gray-500">
-            รหัสแผนกต้องเป็นตัวอักษร ตัวเลข หรือเครื่องหมาย - และ _ เท่านั้น (ไม่บังคับ)
+            รหัสหน่วยงานต้องเป็นตัวอักษร ตัวเลข หรือเครื่องหมาย - และ _ เท่านั้น (ไม่บังคับ)
           </p>
         </div>
 
